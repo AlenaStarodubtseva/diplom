@@ -335,7 +335,12 @@ const statusDialog = reactive({
 
 const registrationLabel = computed(() => {
   if (!request.value?.registrationNumber) return ''
-  return `${request.value.facultyId || 'F'}-${request.value.registrationNumber}/${request.value.registrationYear || new Date().getFullYear()}`
+
+  const facultyCode = String(request.value.facultyId || 0).padStart(2, '0')
+  const regNumber = String(request.value.registrationNumber).padStart(4, '0')
+  const year = request.value.registrationYear || new Date().getFullYear()
+
+  return `${facultyCode}-${regNumber}/${year}`
 })
 
 const canRollbackStatus = computed(() => {
@@ -387,7 +392,7 @@ function statusColor(s) {
 }
 
 function formatDate(value) {
-  if (!value) return '—'
+  if (!value) return null
   return new Date(value).toLocaleDateString('ru-RU')
 }
 
@@ -397,7 +402,7 @@ function formatDateTime(value) {
 }
 
 function normalizeRequest(data) {
-  const courseGroup = [data.course, data.groupName].filter(Boolean).join(' / ')
+  const courseGroup = [data.course ? `${data.course} курс` : null, data.groupName].filter(Boolean).join(' / ')
 
   return {
     id: data.id,
@@ -405,6 +410,7 @@ function normalizeRequest(data) {
     courseGroup: courseGroup || '—',
     facultyId: data.facultyId,
     facultyName: data.facultyName,
+    facultyCode: data.facultyCode,
     purpose: data.purpose || '—',
     qty: data.copiesCount || 1,
     type: data.certificateType,
@@ -426,7 +432,7 @@ function buildStatusHistory(items) {
   const statuses = []
 
   items
-    .filter(item => item.actionType === 'CREATE' || item.actionType === 'STATUS_CHANGE')
+    .filter(item => ['CREATE', 'STATUS_CHANGE', 'REGISTER', 'CANCEL'].includes(item.actionType))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .forEach(item => {
       const status = item.newStatus || (item.actionType === 'CREATE' ? 'NEW' : null)
@@ -446,6 +452,9 @@ function normalizeHistory(items) {
       if (item.actionType === 'CREATE') {
         title = 'Заявка создана'
         body = item.comment || 'Студент создал заявку на справку.'
+      } else if (item.actionType === 'REGISTER') {
+        title = 'Заявка принята'
+        body = item.comment || 'Заявка принята и зарегистрирована.'
       } else if (item.actionType === 'STATUS_CHANGE') {
         title = 'Статус изменён'
         body = item.comment || `Новый статус: ${statusLabel(item.newStatus)}.`
@@ -455,6 +464,8 @@ function normalizeHistory(items) {
         title = 'Комментарий секретаря'
       } else if (item.actionType === 'ARCHIVE') {
         title = 'Архивация'
+      } else if (item.actionType === 'CANCEL') {
+        title = 'Заявка отменена'
       }
 
       return {
@@ -565,10 +576,12 @@ async function confirmStatusAction() {
 
     statusDialog.open = false
   } catch (err) {
-    console.error(err)
+    console.error('STATUS ERROR', err)
+    console.error('STATUS ERROR RESPONSE', err?.response?.data)
+
     $q.notify({
       type: 'negative',
-      message: 'Не удалось изменить статус заявки.',
+      message: err?.response?.data?.message || err?.message || 'Не удалось изменить статус заявки.',
       position: 'top'
     })
   }

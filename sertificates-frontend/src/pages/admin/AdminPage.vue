@@ -153,7 +153,16 @@
               </template>
             </div>
 
+            <div v-if="requestsLoading" class="q-pa-md text-grey-7">
+              Загрузка...
+            </div>
+
+            <div v-else-if="requestsError" class="q-pa-md text-negative">
+              {{ requestsError }}
+            </div>
+
             <q-table
+              v-else
               :rows="filteredRequests"
               :columns="requestColumns"
               row-key="id"
@@ -350,7 +359,16 @@
               </div>
             </div>
 
+            <div v-if="facultiesLoading" class="q-pa-md text-grey-7">
+              Загрузка...
+            </div>
+
+            <div v-else-if="facultiesError" class="q-pa-md text-negative">
+              {{ facultiesError }}
+            </div>
+
             <q-table
+              v-else
               :rows="filteredFacultyRows"
               :columns="facultyColumns"
               row-key="id"
@@ -515,9 +533,16 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
+import { getRequests, updateRequestStatus } from 'src/api/requests'
+import {
+  getFaculties,
+  createFaculty,
+  updateFaculty,
+  toggleFacultyActive
+} from 'src/api/faculties'
 
 const router = useRouter()
 const $q = useQuasar()
@@ -531,128 +556,13 @@ const facultySearch = ref('')
 
 const selectedRequests = ref([])
 
-const faculties = ref([
-  {
-    id: 1,
-    code: 'F01',
-    name: 'ФФМОиТ',
-    nextRegistrationNumber: 19,
-    active: true
-  },
-  {
-    id: 2,
-    code: 'F02',
-    name: 'ФПП',
-    nextRegistrationNumber: 6,
-    active: true
-  },
-  {
-    id: 3,
-    code: 'F03',
-    name: 'Историко-филологический факультет',
-    nextRegistrationNumber: 14,
-    active: false
-  }
-])
+const requestsLoading = ref(false)
+const requestsError = ref('')
+const facultiesLoading = ref(false)
+const facultiesError = ref('')
 
-const requests = ref([
-  {
-    id: 346,
-    fio: 'Стародубцева А.К.',
-    courseGroup: '4ИС',
-    facultyId: 'F01',
-    purpose: 'По месту требования',
-    qty: 1,
-    type: 'NO_STIPEND',
-    periodFrom: null,
-    periodTo: null,
-    createdAt: '08.12.2025',
-    status: 'IN_WORK',
-    archived: false,
-    registrationNumber: 16,
-    registrationYear: 2026
-  },
-  {
-    id: 347,
-    fio: 'Иванова А.А.',
-    courseGroup: '3ИС',
-    facultyId: 'F01',
-    purpose: 'Соцзащита',
-    qty: 2,
-    type: 'WITH_STIPEND',
-    periodFrom: '01.09.2025',
-    periodTo: '31.12.2025',
-    createdAt: '09.12.2025',
-    status: 'READY',
-    archived: false,
-    registrationNumber: 17,
-    registrationYear: 2026
-  },
-  {
-    id: 348,
-    fio: 'Петров П.П.',
-    courseGroup: '2МО',
-    facultyId: 'F01',
-    purpose: 'Военкомат',
-    qty: 1,
-    type: 'NO_STIPEND',
-    periodFrom: null,
-    periodTo: null,
-    createdAt: '10.12.2025',
-    status: 'NEW',
-    archived: false,
-    registrationNumber: null,
-    registrationYear: null
-  },
-  {
-    id: 349,
-    fio: 'Смирнова Е.В.',
-    courseGroup: '1ПО',
-    facultyId: 'F01',
-    purpose: 'По месту требования',
-    qty: 1,
-    type: 'WITH_STIPEND',
-    periodFrom: '01.01.2025',
-    periodTo: '31.05.2025',
-    createdAt: '15.12.2025',
-    status: 'ACCEPTED',
-    archived: false,
-    registrationNumber: 18,
-    registrationYear: 2026
-  },
-  {
-    id: 350,
-    fio: 'Кузнецова Н.И.',
-    courseGroup: '4ИС',
-    facultyId: 'F01',
-    purpose: 'Посольство',
-    qty: 1,
-    type: 'NO_STIPEND',
-    periodFrom: null,
-    periodTo: null,
-    createdAt: '01.11.2025',
-    status: 'READY',
-    archived: true,
-    registrationNumber: 11,
-    registrationYear: 2025
-  },
-  {
-    id: 351,
-    fio: 'Орлов Д.С.',
-    courseGroup: '3ИС',
-    facultyId: 'F02',
-    purpose: 'Соцзащита',
-    qty: 1,
-    type: 'WITH_STIPEND',
-    periodFrom: '01.09.2025',
-    periodTo: '31.12.2025',
-    createdAt: '12.12.2025',
-    status: 'IN_WORK',
-    archived: false,
-    registrationNumber: 5,
-    registrationYear: 2026
-  }
-])
+const faculties = ref([])
+const requests = ref([])
 
 const accessRows = ref([
   {
@@ -699,7 +609,9 @@ const statusOptions = [
   { label: 'В обработке', value: 'IN_WORK' },
   { label: 'Отложено', value: 'DELAYED' },
   { label: 'Готово', value: 'READY' },
-  { label: 'Отклонено', value: 'REJECTED' }
+  { label: 'Отклонено', value: 'REJECTED' },
+  { label: 'В архиве', value: 'ARCHIVED' },
+  { label: 'Отменена', value: 'CANCELLED' }
 ]
 
 const roleOptions = [
@@ -794,7 +706,6 @@ const filteredFacultyRows = computed(() => {
 
   return faculties.value.filter((row) => {
     if (!q) return true
-
     return [row.code, row.name].join(' ').toLowerCase().includes(q)
   })
 })
@@ -824,9 +735,74 @@ const facultyDialog = ref({
   }
 })
 
+async function loadRequests() {
+  requestsLoading.value = true
+  requestsError.value = ''
+
+  try {
+    const { data } = await getRequests()
+    requests.value = data.map(normalizeRequestRow)
+  } catch (err) {
+    console.error(err)
+    requestsError.value = 'Не удалось загрузить заявки'
+  } finally {
+    requestsLoading.value = false
+  }
+}
+
+async function loadFaculties() {
+  facultiesLoading.value = true
+  facultiesError.value = ''
+
+  try {
+    const { data } = await getFaculties()
+    faculties.value = data.map((f) => ({
+      id: f.id,
+      code: f.code,
+      name: f.name,
+      nextRegistrationNumber: f.nextRegistrationNumber,
+      active: !!f.isActive
+    }))
+  } catch (err) {
+    console.error(err)
+    facultiesError.value = 'Не удалось загрузить факультеты'
+  } finally {
+    facultiesLoading.value = false
+  }
+}
+
+function normalizeRequestRow(r) {
+  return {
+    id: r.id,
+    fio: r.studentFullName || '—',
+    courseGroup: [r.course ? `${r.course} курс` : null, r.groupName].filter(Boolean).join(' / ') || '—',
+    facultyId: facultyCodeById(r.facultyId),
+    purpose: r.purpose || '—',
+    qty: r.copiesCount || 1,
+    type: r.certificateType,
+    periodFrom: formatDate(r.periodFrom),
+    periodTo: formatDate(r.periodTo),
+    createdAt: formatDate(r.createdAt),
+    status: r.status,
+    archived: r.status === 'ARCHIVED',
+    registrationNumber: r.registrationNumber,
+    registrationYear: r.registrationYear
+  }
+}
+
+function facultyCodeById(id) {
+  const found = faculties.value.find((f) => f.id === id)
+  return found ? found.code : (id ? `F${String(id).padStart(2, '0')}` : '')
+}
+
+function formatDate(value) {
+  if (!value) return null
+  return new Date(value).toLocaleDateString('ru-RU')
+}
+
 function formatRegistration(row) {
   if (!row.registrationNumber || !row.registrationYear) return ''
-  return `${row.facultyId}-${row.registrationNumber}/${row.registrationYear}`
+  return `${row.facultyId}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
 }
 
 function typeLabel(type) {
@@ -848,7 +824,9 @@ function statusColor(status) {
     IN_WORK: 'orange-8',
     DELAYED: 'brown-6',
     READY: 'green-7',
-    REJECTED: 'red-7'
+    REJECTED: 'red-7',
+    ARCHIVED: 'blue-grey-7',
+    CANCELLED: 'deep-orange-6'
   }
 
   return map[status] || 'grey-7'
@@ -887,48 +865,62 @@ function openRequest(id) {
   router.push(`/secretary/${id}`)
 }
 
-function bulkArchiveRequests() {
+async function bulkArchiveRequests() {
   if (requestTab.value !== 'active') return
 
-  const ids = new Set(selectedRequests.value.map((s) => s.id))
-  requests.value = requests.value.map((r) => (
-    ids.has(r.id)
-      ? { ...r, archived: true }
-      : r
-  ))
+  try {
+    for (const row of selectedRequests.value) {
+      await updateRequestStatus(row.id, 'ARCHIVED')
+    }
 
-  selectedRequests.value = []
+    selectedRequests.value = []
+    await loadRequests()
 
-  $q.notify({
-    type: 'positive',
-    message: 'Заявки перенесены в архив.',
-    position: 'top'
-  })
+    $q.notify({
+      type: 'positive',
+      message: 'Заявки перенесены в архив.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось перенести заявки в архив.',
+      position: 'top'
+    })
+  }
 }
 
-function bulkUnarchiveRequests() {
+async function bulkUnarchiveRequests() {
   if (requestTab.value !== 'archive') return
 
-  const ids = new Set(selectedRequests.value.map((s) => s.id))
-  requests.value = requests.value.map((r) => (
-    ids.has(r.id)
-      ? { ...r, archived: false }
-      : r
-  ))
+  try {
+    for (const row of selectedRequests.value) {
+      await updateRequestStatus(row.id, 'ACCEPTED')
+    }
 
-  selectedRequests.value = []
+    selectedRequests.value = []
+    await loadRequests()
 
-  $q.notify({
-    type: 'positive',
-    message: 'Заявки возвращены в активные.',
-    position: 'top'
-  })
+    $q.notify({
+      type: 'positive',
+      message: 'Заявки возвращены в активные.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось вернуть заявки в активные.',
+      position: 'top'
+    })
+  }
 }
 
 function generateCommonDocument() {
   $q.notify({
     type: 'info',
-    message: `Сформирован общий документ по ${selectedRequests.value.length} заявк(е/ам) — мок.`,
+    message: `Сформирован общий документ по ${selectedRequests.value.length} заявк(е/ам) — пока мок.`,
     position: 'top'
   })
 }
@@ -1033,7 +1025,7 @@ function openEditFacultyDialog(row) {
   }
 }
 
-function saveFaculty() {
+async function saveFaculty() {
   const form = facultyDialog.value.form
 
   if (!form.code?.trim() || !form.name?.trim()) {
@@ -1060,42 +1052,67 @@ function saveFaculty() {
     return
   }
 
-  if (facultyDialog.value.mode === 'create') {
-    faculties.value.unshift({
-      ...form,
-      id: Date.now(),
-      code: normalizedCode
+  try {
+    if (facultyDialog.value.mode === 'create') {
+      await createFaculty({
+        code: normalizedCode,
+        name: form.name,
+        nextRegistrationNumber: form.nextRegistrationNumber,
+        isActive: form.active
+      })
+    } else {
+      await updateFaculty(form.id, {
+        code: normalizedCode,
+        name: form.name,
+        nextRegistrationNumber: form.nextRegistrationNumber,
+        isActive: form.active
+      })
+    }
+
+    facultyDialog.value.open = false
+    await loadFaculties()
+    await loadRequests()
+
+    $q.notify({
+      type: 'positive',
+      message: 'Факультет сохранён.',
+      position: 'top'
     })
-  } else {
-    faculties.value = faculties.value.map((row) =>
-      row.id === form.id
-        ? { ...form, code: normalizedCode }
-        : row
-    )
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось сохранить факультет.',
+      position: 'top'
+    })
   }
-
-  facultyDialog.value.open = false
-
-  $q.notify({
-    type: 'positive',
-    message: 'Факультет сохранён.',
-    position: 'top'
-  })
 }
 
-function toggleFacultyStatus(row) {
-  faculties.value = faculties.value.map((item) =>
-    item.id === row.id
-      ? { ...item, active: !item.active }
-      : item
-  )
+async function toggleFacultyStatus(row) {
+  try {
+    await toggleFacultyActive(row.id)
+    await loadFaculties()
+    await loadRequests()
 
-  $q.notify({
-    type: 'positive',
-    message: row.active ? 'Факультет скрыт.' : 'Факультет активирован.',
-    position: 'top'
-  })
+    $q.notify({
+      type: 'positive',
+      message: row.active ? 'Факультет скрыт.' : 'Факультет активирован.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось изменить статус факультета.',
+      position: 'top'
+    })
+  }
 }
+
+onMounted(async () => {
+  await loadFaculties()
+  await loadRequests()
+})
 </script>
 
 <style scoped>

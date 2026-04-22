@@ -30,16 +30,17 @@ public class FacultyController {
     @PostMapping
     public Faculty create(@RequestBody Faculty faculty) {
         faculty.setId(null);
-        faculty.setCreatedAt(LocalDateTime.now());
-        faculty.setUpdatedAt(LocalDateTime.now());
 
         if (faculty.getIsActive() == null) {
             faculty.setIsActive(true);
         }
 
-        if (faculty.getNextRegistrationNumber() == null) {
+        if (faculty.getNextRegistrationNumber() == null || faculty.getNextRegistrationNumber() < 1) {
             faculty.setNextRegistrationNumber(1);
         }
+
+        faculty.setCreatedAt(LocalDateTime.now());
+        faculty.setUpdatedAt(LocalDateTime.now());
 
         return facultyRepository.save(faculty);
     }
@@ -53,6 +54,17 @@ public class FacultyController {
         existing.setName(updatedFaculty.getName());
         existing.setIsActive(updatedFaculty.getIsActive());
         existing.setNextRegistrationNumber(updatedFaculty.getNextRegistrationNumber());
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        return facultyRepository.save(existing);
+    }
+
+    @PatchMapping("/{id}/toggle-active")
+    public Faculty toggleActive(@PathVariable Long id) {
+        Faculty existing = facultyRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Факультет не найден"));
+
+        existing.setIsActive(!Boolean.TRUE.equals(existing.getIsActive()));
         existing.setUpdatedAt(LocalDateTime.now());
 
         return facultyRepository.save(existing);
