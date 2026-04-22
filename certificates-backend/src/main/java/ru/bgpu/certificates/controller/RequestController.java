@@ -3,6 +3,8 @@ package ru.bgpu.certificates.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import ru.bgpu.certificates.entity.Request;
+import ru.bgpu.certificates.entity.RequestHistory;
+import ru.bgpu.certificates.repository.RequestHistoryRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
 
 import java.time.LocalDateTime;
@@ -15,6 +17,7 @@ import java.util.List;
 public class RequestController {
 
     private final RequestRepository requestRepository;
+    private final RequestHistoryRepository requestHistoryRepository;
 
     @GetMapping
     public List<Request> getAll() {
@@ -49,7 +52,23 @@ public class RequestController {
             request.setCopiesCount(1);
         }
 
-        return requestRepository.save(request);
+        Request saved = requestRepository.save(request);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("CREATE")
+                        .oldStatus(null)
+                        .newStatus(saved.getStatus())
+                        .comment("Заявка создана")
+                        .actorLogin("student")
+                        .actorFullName(saved.getStudentFullName())
+                        .actorRole("STUDENT")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
     }
 
     @PutMapping("/{id}")
@@ -92,7 +111,23 @@ public class RequestController {
         existing.setStudentComment(payload.getComment());
         existing.setUpdatedAt(LocalDateTime.now());
 
-        return requestRepository.save(existing);
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("STUDENT_COMMENT")
+                        .oldStatus(saved.getStatus())
+                        .newStatus(saved.getStatus())
+                        .comment("Комментарий студента: " + payload.getComment())
+                        .actorLogin("student")
+                        .actorFullName(saved.getStudentFullName())
+                        .actorRole("STUDENT")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
     }
 
     @PatchMapping("/{id}/secretary-comment")
@@ -103,13 +138,31 @@ public class RequestController {
         existing.setSecretaryComment(payload.getComment());
         existing.setUpdatedAt(LocalDateTime.now());
 
-        return requestRepository.save(existing);
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("SECRETARY_COMMENT")
+                        .oldStatus(saved.getStatus())
+                        .newStatus(saved.getStatus())
+                        .comment("Комментарий секретаря: " + payload.getComment())
+                        .actorLogin("secretary")
+                        .actorFullName("Секретарь")
+                        .actorRole("SECRETARY")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
     }
 
     @PatchMapping("/{id}/status")
     public Request updateStatus(@PathVariable Long id, @RequestBody StatusRequest payload) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        String oldStatus = existing.getStatus();
 
         existing.setStatus(payload.getStatus());
         existing.setUpdatedAt(LocalDateTime.now());
@@ -122,7 +175,52 @@ public class RequestController {
             existing.setCompletedAt(LocalDateTime.now());
         }
 
-        return requestRepository.save(existing);
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("STATUS_CHANGE")
+                        .oldStatus(oldStatus)
+                        .newStatus(saved.getStatus())
+                        .comment("Статус изменён")
+                        .actorLogin("secretary")
+                        .actorFullName("Секретарь")
+                        .actorRole("SECRETARY")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
+    }
+
+    @PatchMapping("/{id}/cancel")
+    public Request cancelRequest(@PathVariable Long id) {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        String oldStatus = existing.getStatus();
+        existing.setStatus("CANCELLED");
+        existing.setUpdatedAt(LocalDateTime.now());
+        existing.setArchivedAt(LocalDateTime.now());
+
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("CANCEL")
+                        .oldStatus(oldStatus)
+                        .newStatus("CANCELLED")
+                        .comment("Заявка отменена студентом")
+                        .actorLogin("student")
+                        .actorFullName(saved.getStudentFullName())
+                        .actorRole("STUDENT")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
     }
 
     @DeleteMapping("/{id}")

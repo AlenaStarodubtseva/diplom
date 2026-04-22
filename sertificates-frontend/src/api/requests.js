@@ -19,3 +19,19 @@ export function updateRequest(id, payload) {
 export function deleteRequest(id) {
   return api.delete(`/requests/${id}`)
 }
+
+export function updateStudentComment(id, comment) {
+  return api.patch(`/requests/${id}/student-comment`, { comment })
+}
+
+export function updateSecretaryComment(id, comment) {
+  return api.patch(`/requests/${id}/secretary-comment`, { comment })
+}
+
+export function updateRequestStatus(id, status) {
+  return api.patch(`/requests/${id}/status`, { status })
+}
+
+export function cancelRequest(id) {
+  return api.patch(`/requests/${id}/cancel`)
+}
