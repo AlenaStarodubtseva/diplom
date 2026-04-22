@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-md">
+  <q-page class="q-pa-md requests-page">
     <div class="q-mb-md">
       <div class="text-h6">Справки</div>
     </div>
@@ -28,16 +28,16 @@
       </div>
     </template>
 
-    <q-btn
-      unelevated
-      class="full-width q-mt-lg"
-      size="lg"
-      icon="add"
-      label="Создать новую заявку"
-      color="grey-4"
-      text-color="black"
-      @click="$router.push('/student/new')"
-    />
+    <div class="create-btn-wrap">
+      <q-btn
+        unelevated
+        class="create-btn"
+        size="lg"
+        icon="add"
+        label="Создать новую заявку"
+        @click="$router.push('/student/new')"
+      />
+    </div>
   </q-page>
 </template>
 
@@ -74,3 +74,38 @@ onMounted(() => {
   loadRequests()
 })
 </script>
+
+<style scoped>
+.requests-page {
+  background: #f7f7f8;
+  min-height: 100%;
+}
+
+.create-btn-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.create-btn {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 16px;
+  background: #8b0015 !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  padding: 12px 20px;
+}
+
+.create-btn:hover {
+  background: #a3001b !important;
+}
+
+@media (max-width: 600px) {
+  .create-btn {
+    max-width: 100%;
+    font-size: 18px;
+  }
+}
+</style>

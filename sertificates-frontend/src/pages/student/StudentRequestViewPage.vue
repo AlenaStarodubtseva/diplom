@@ -476,34 +476,43 @@ onMounted(async () => {
   transform: scale(1.05);
 }
 
-/* обычное состояние */
+/* ===== INPUT STYLE ===== */
 .comment-input :deep(.q-field__control) {
   border-radius: 14px;
 }
 
-/* quasar outlined рамка */
-.comment-input :deep(.q-field--outlined .q-field__control:before) {
+/* обычная рамка */
+.comment-input :deep(.q-field__control:before) {
   border: 1px solid #d1d5db !important;
 }
 
-.comment-input :deep(.q-field--outlined.q-field--hovered .q-field__control:before) {
+/* hover */
+.comment-input :deep(.q-field__control:hover:before) {
   border-color: #8b0015 !important;
 }
 
-/* фокус — перебиваем синий */
-.comment-input :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
+/* focus — главная рамка */
+.comment-input :deep(.q-field--focused .q-field__control:before) {
   border: 2px solid #8b0015 !important;
 }
 
-.comment-input :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
+.comment-input :deep(.q-field--focused .q-field__control:after) {
   border: 2px solid #8b0015 !important;
 }
 
+/* убираем синюю тень браузера / фреймворка */
+.comment-input :deep(textarea:focus),
+.comment-input :deep(.q-field__native:focus) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* внутренняя тень поля */
 .comment-input :deep(.q-field--focused .q-field__control) {
-  box-shadow: 0 0 0 2px rgba(139, 0, 21, 0.12);
+  box-shadow: 0 0 0 2px rgba(139, 0, 21, 0.12) !important;
 }
 
-/* каретка тоже бордовая */
+/* цвет каретки */
 .comment-input :deep(textarea),
 .comment-input :deep(.q-field__native) {
   caret-color: #8b0015;
