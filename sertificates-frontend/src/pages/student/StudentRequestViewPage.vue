@@ -1,78 +1,113 @@
 <template>
   <q-page class="q-pa-md">
-    <q-card class="q-pa-md card">
-      <div class="text-h6 q-mb-sm">Справка об обучении №{{ req.number }}</div>
-      <div class="text-caption text-grey-7 q-mb-md">от {{ req.date }}</div>
+    <div v-if="loading" class="text-grey-7">Загрузка...</div>
 
-      <div class="q-mb-sm"><b>Статус:</b> {{ req.statusText }}</div>
-      <div class="q-mb-sm"><b>Нужна электронная копия:</b> {{ req.needScan ? 'Да' : 'Нет' }}</div>
+    <div v-else-if="error" class="text-negative">
+      {{ error }}
+    </div>
 
-      <div class="q-mt-md text-subtitle2">Получатель</div>
-      <div><b>ФИО:</b> {{ req.fio }}</div>
-      <div><b>Курс:</b> {{ req.course }}</div>
-      <div><b>Группа:</b> {{ req.group }}</div>
-
-      <div class="q-mt-md"><b>Куда требуется справка:</b> {{ req.purpose }}</div>
-      <div class="q-mt-sm"><b>Комментарий студента:</b> {{ req.studentComment || 'Комментарий отсутствует' }}</div>
-
-      <q-separator class="q-my-md" />
-
-      <div class="text-subtitle2 q-mb-sm">Ваш комментарий к заявке</div>
-      <div class="row items-center q-col-gutter-sm">
-        <div class="col">
-          <q-input outlined v-model="newComment" placeholder="Комментарий..." />
-        </div>
-        <div class="col-auto">
-          <q-btn outline label="Отправить" @click="sendComment" />
-        </div>
+    <q-card v-else flat bordered class="q-pa-md">
+      <div class="text-h6 q-mb-md">
+        Заявка №{{ request.id }}
       </div>
 
-      <div class="text-subtitle2 q-mt-lg q-mb-sm">История обработки</div>
-      <div v-for="h in history" :key="h.dt" class="text-body2 q-mb-xs">
-        {{ h.dt }} — {{ h.text }}
+      <div class="q-mb-sm"><b>Тип:</b> {{ request.certificateType }}</div>
+      <div class="q-mb-sm"><b>Цель:</b> {{ request.purpose }}</div>
+      <div class="q-mb-sm"><b>Статус:</b> {{ request.status }}</div>
+      <div class="q-mb-sm"><b>ФИО:</b> {{ request.studentFullName }}</div>
+      <div class="q-mb-sm"><b>Группа:</b> {{ request.groupName || '—' }}</div>
+      <div class="q-mb-sm"><b>Курс:</b> {{ request.course || '—' }}</div>
+      <div class="q-mb-sm"><b>Факультет:</b> {{ request.facultyName || '—' }}</div>
+      <div class="q-mb-sm"><b>Нужен скан:</b> {{ request.needScan ? 'Да' : 'Нет' }}</div>
+
+      <q-input
+        v-model="request.studentComment"
+        type="textarea"
+        outlined
+        autogrow
+        label="Комментарий"
+        class="q-mt-md"
+      />
+
+      <div class="row q-col-gutter-sm q-mt-md">
+        <div class="col">
+          <q-btn
+            flat
+            color="grey-8"
+            label="Назад"
+            class="full-width"
+            @click="$router.push('/student')"
+          />
+        </div>
+        <div class="col">
+          <q-btn
+            unelevated
+            color="primary"
+            label="Сохранить комментарий"
+            class="full-width"
+            :loading="saving"
+            @click="saveComment"
+          />
+        </div>
       </div>
     </q-card>
   </q-page>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useQuasar } from 'quasar'
+import { getRequestById, updateRequest } from 'src/api/requests'
 
 const route = useRoute()
-const id = route.params.id
+const router = useRouter()
+const $q = useQuasar()
 
-// мок-данные (потом из API)
-const req = {
-  id,
-  number: id,
-  date: '08.12.2025',
-  statusText: 'В обработке',
-  needScan: false,
-  fio: 'Стародубцева Алёна Константиновна',
-  course: 4,
-  group: '4ИС',
-  purpose: 'По месту требования',
-  studentComment: ''
+const request = ref(null)
+const loading = ref(false)
+const saving = ref(false)
+const error = ref('')
+
+async function loadRequest() {
+  loading.value = true
+  error.value = ''
+
+  try {
+    const response = await getRequestById(route.params.id)
+    request.value = response.data
+  } catch (err) {
+    console.error(err)
+    error.value = 'Не удалось загрузить заявку'
+  } finally {
+    loading.value = false
+  }
 }
 
-const history = ref([
-  { dt: '08.12.2025 10:43', text: 'Заявка создана' },
-  { dt: '08.12.2025 11:10', text: 'В обработке' }
-])
+async function saveComment() {
+  if (!request.value) return
 
-const newComment = ref('')
+  saving.value = true
 
-function sendComment () {
-  if (!newComment.value.trim()) return
-  // потом: POST в API
-  history.value.push({ dt: 'сейчас', text: 'Комментарий студента отправлен' })
-  newComment.value = ''
+  try {
+    await updateRequest(request.value.id, request.value)
+
+    $q.notify({
+      type: 'positive',
+      message: 'Комментарий сохранён'
+    })
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось сохранить комментарий'
+    })
+  } finally {
+    saving.value = false
+  }
 }
+
+onMounted(() => {
+  loadRequest()
+})
 </script>
-
-<style scoped>
-.card {
-  border-radius: 14px;
-}
-</style>

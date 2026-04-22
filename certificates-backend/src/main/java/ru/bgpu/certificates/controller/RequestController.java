@@ -84,8 +84,73 @@ public class RequestController {
         return requestRepository.save(existing);
     }
 
+    @PatchMapping("/{id}/student-comment")
+    public Request updateStudentComment(@PathVariable Long id, @RequestBody CommentRequest payload) {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        existing.setStudentComment(payload.getComment());
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        return requestRepository.save(existing);
+    }
+
+    @PatchMapping("/{id}/secretary-comment")
+    public Request updateSecretaryComment(@PathVariable Long id, @RequestBody CommentRequest payload) {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        existing.setSecretaryComment(payload.getComment());
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        return requestRepository.save(existing);
+    }
+
+    @PatchMapping("/{id}/status")
+    public Request updateStatus(@PathVariable Long id, @RequestBody StatusRequest payload) {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        existing.setStatus(payload.getStatus());
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        if ("ACCEPTED".equals(payload.getStatus()) && existing.getAcceptedAt() == null) {
+            existing.setAcceptedAt(LocalDateTime.now());
+        }
+
+        if ("READY".equals(payload.getStatus()) && existing.getCompletedAt() == null) {
+            existing.setCompletedAt(LocalDateTime.now());
+        }
+
+        return requestRepository.save(existing);
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         requestRepository.deleteById(id);
+    }
+
+    public static class CommentRequest {
+        private String comment;
+
+        public String getComment() {
+            return comment;
+        }
+
+        public void setComment(String comment) {
+            this.comment = comment;
+        }
+    }
+
+    public static class StatusRequest {
+        private String status;
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
     }
 }
