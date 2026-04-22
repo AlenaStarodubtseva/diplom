@@ -2,8 +2,10 @@ package ru.bgpu.certificates.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import ru.bgpu.certificates.entity.Faculty;
 import ru.bgpu.certificates.entity.Request;
 import ru.bgpu.certificates.entity.RequestHistory;
+import ru.bgpu.certificates.repository.FacultyRepository;
 import ru.bgpu.certificates.repository.RequestHistoryRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
 
@@ -18,6 +20,7 @@ public class RequestController {
 
     private final RequestRepository requestRepository;
     private final RequestHistoryRepository requestHistoryRepository;
+    private final FacultyRepository facultyRepository;
 
     @GetMapping
     public List<Request> getAll() {
@@ -103,6 +106,59 @@ public class RequestController {
         return requestRepository.save(existing);
     }
 
+    @PatchMapping("/{id}/accept")
+    public Request acceptRequest(@PathVariable Long id) {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        if (!"NEW".equals(existing.getStatus())) {
+            throw new RuntimeException("Принять можно только новую заявку");
+        }
+
+        if (existing.getFacultyId() == null) {
+            throw new RuntimeException("У заявки не указан факультет");
+        }
+
+        Faculty faculty = facultyRepository.findById(existing.getFacultyId())
+                .orElseThrow(() -> new RuntimeException("Факультет не найден"));
+
+        Integer nextNumber = faculty.getNextRegistrationNumber();
+        if (nextNumber == null || nextNumber < 1) {
+            nextNumber = 1;
+        }
+
+        String oldStatus = existing.getStatus();
+
+        existing.setStatus("ACCEPTED");
+        existing.setRegistrationNumber(nextNumber);
+        existing.setRegistrationYear(LocalDateTime.now().getYear());
+        existing.setRegisteredAt(LocalDateTime.now());
+        existing.setAcceptedAt(LocalDateTime.now());
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        Request saved = requestRepository.save(existing);
+
+        faculty.setNextRegistrationNumber(nextNumber + 1);
+        faculty.setUpdatedAt(LocalDateTime.now());
+        facultyRepository.save(faculty);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("REGISTER")
+                        .oldStatus(oldStatus)
+                        .newStatus("ACCEPTED")
+                        .comment("Заявка принята и зарегистрирована")
+                        .actorLogin("sec_f01")
+                        .actorFullName("Секретарь")
+                        .actorRole("SECRETARY")
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
+    }
+
     @PatchMapping("/{id}/student-comment")
     public Request updateStudentComment(@PathVariable Long id, @RequestBody CommentRequest payload) {
         Request existing = requestRepository.findById(id)
@@ -147,7 +203,7 @@ public class RequestController {
                         .oldStatus(saved.getStatus())
                         .newStatus(saved.getStatus())
                         .comment("Комментарий секретаря: " + payload.getComment())
-                        .actorLogin("secretary")
+                        .actorLogin("sec_f01")
                         .actorFullName("Секретарь")
                         .actorRole("SECRETARY")
                         .createdAt(LocalDateTime.now())
@@ -167,12 +223,12 @@ public class RequestController {
         existing.setStatus(payload.getStatus());
         existing.setUpdatedAt(LocalDateTime.now());
 
-        if ("ACCEPTED".equals(payload.getStatus()) && existing.getAcceptedAt() == null) {
-            existing.setAcceptedAt(LocalDateTime.now());
-        }
-
         if ("READY".equals(payload.getStatus()) && existing.getCompletedAt() == null) {
             existing.setCompletedAt(LocalDateTime.now());
+        }
+
+        if ("ARCHIVED".equals(payload.getStatus()) && existing.getArchivedAt() == null) {
+            existing.setArchivedAt(LocalDateTime.now());
         }
 
         Request saved = requestRepository.save(existing);
@@ -184,7 +240,7 @@ public class RequestController {
                         .oldStatus(oldStatus)
                         .newStatus(saved.getStatus())
                         .comment("Статус изменён")
-                        .actorLogin("secretary")
+                        .actorLogin("sec_f01")
                         .actorFullName("Секретарь")
                         .actorRole("SECRETARY")
                         .createdAt(LocalDateTime.now())

@@ -20,6 +20,10 @@ export function deleteRequest(id) {
   return api.delete(`/requests/${id}`)
 }
 
+export function acceptRequest(id) {
+  return api.patch(`/requests/${id}/accept`)
+}
+
 export function updateStudentComment(id, comment) {
   return api.patch(`/requests/${id}/student-comment`, { comment })
 }

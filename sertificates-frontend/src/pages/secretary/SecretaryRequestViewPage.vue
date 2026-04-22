@@ -1,12 +1,20 @@
 <template>
-  <q-page class="q-pa-md">
+  <q-page class="q-pa-md secretary-page">
     <div class="row items-center q-mb-md">
       <div class="text-h6">Карточка заявки</div>
       <q-space />
       <q-btn flat icon="arrow_back" class="campus-accent" label="Назад" @click="goBack" />
     </div>
 
-    <div class="row q-col-gutter-md">
+    <div v-if="loading" class="text-grey-7 q-mt-md">
+      Загрузка...
+    </div>
+
+    <div v-else-if="error" class="text-negative q-mt-md">
+      {{ error }}
+    </div>
+
+    <div v-else-if="request" class="row q-col-gutter-md">
       <div class="col-12 col-lg-7">
         <q-card class="card q-mb-md">
           <q-card-section>
@@ -25,7 +33,7 @@
 
               <div class="col-12 col-md-3">
                 <div class="field-label">Факультет</div>
-                <div class="field-value">{{ request.facultyId }}</div>
+                <div class="field-value">{{ request.facultyName || request.facultyId || '—' }}</div>
               </div>
 
               <div class="col-12">
@@ -47,7 +55,7 @@
 
               <div class="col-12" v-if="request.type === 'WITH_STIPEND'">
                 <div class="field-label">Период</div>
-                <div class="field-value">{{ request.periodFrom }} — {{ request.periodTo }}</div>
+                <div class="field-value">{{ request.periodFrom || '—' }} — {{ request.periodTo || '—' }}</div>
               </div>
 
               <div class="col-12 col-md-6">
@@ -62,6 +70,11 @@
                     {{ statusLabel(request.status) }}
                   </q-chip>
                 </div>
+              </div>
+
+              <div class="col-12">
+                <div class="field-label">Комментарий студента</div>
+                <div class="field-value">{{ request.studentComment || 'Комментарий отсутствует' }}</div>
               </div>
             </div>
           </q-card-section>
@@ -80,6 +93,10 @@
                 :body="item.body"
               />
             </q-timeline>
+
+            <div v-if="!history.length" class="text-grey-7">
+              История пока отсутствует
+            </div>
           </q-card-section>
         </q-card>
       </div>
@@ -155,7 +172,7 @@
               />
 
               <q-btn
-                v-if="request.status !== 'REJECTED' && request.status !== 'READY'"
+                v-if="request.status !== 'REJECTED' && request.status !== 'READY' && request.status !== 'CANCELLED'"
                 outline
                 color="negative"
                 label="Отклонить заявку"
@@ -203,6 +220,7 @@
               outlined
               autogrow
               placeholder="Добавить комментарий..."
+              :disable="request.status === 'CANCELLED'"
             />
 
             <q-btn
@@ -210,6 +228,7 @@
               color="primary"
               class="q-mt-md"
               label="Сохранить комментарий"
+              :disable="request.status === 'CANCELLED'"
               @click="saveComment"
             />
           </q-card-section>
@@ -283,9 +302,16 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  getRequestById,
+  updateSecretaryComment,
+  updateRequestStatus,
+  acceptRequest
+} from 'src/api/requests'
+import { getRequestHistory } from 'src/api/requestHistory'
 
 const $q = useQuasar()
 const route = useRoute()
@@ -293,36 +319,12 @@ const router = useRouter()
 
 const requestId = Number(route.params.id)
 
-const request = ref({
-  id: requestId,
-  regNumber: requestId,
-  fio: 'Стародубцева А.К.',
-  courseGroup: '4ИС',
-  facultyId: 'F01',
-  purpose: 'По месту требования',
-  qty: 2,
-  type: 'WITH_STIPEND',
-  periodFrom: '01.01.2025',
-  periodTo: '31.01.2026',
-  createdAt: '08.12.2025',
-  status: 'NEW',
-  archived: false,
-  registrationNumber: null,
-  registrationYear: null,
-  registeredAt: null,
-  registeredBy: null
-})
+const loading = ref(false)
+const error = ref('')
 
-const history = ref([
-  {
-    id: 1,
-    title: 'Заявка создана',
-    subtitle: '08.12.2025 10:43 • student_2014',
-    body: 'Студент создал заявку на справку.'
-  }
-])
-
-const statusHistory = ref(['NEW'])
+const request = ref(null)
+const history = ref([])
+const statusHistory = ref([])
 const commentText = ref('')
 
 const statusDialog = reactive({
@@ -332,12 +334,12 @@ const statusDialog = reactive({
 })
 
 const registrationLabel = computed(() => {
-  if (!request.value.registrationNumber) return ''
-  return `${request.value.facultyId}-${request.value.registrationNumber}/${request.value.registrationYear}`
+  if (!request.value?.registrationNumber) return ''
+  return `${request.value.facultyId || 'F'}-${request.value.registrationNumber}/${request.value.registrationYear || new Date().getFullYear()}`
 })
 
 const canRollbackStatus = computed(() => {
-  return request.value.status !== 'NEW' && statusHistory.value.length > 1
+  return request.value?.status !== 'NEW' && statusHistory.value.length > 1
 })
 
 const previousStatusLabel = computed(() => {
@@ -356,61 +358,162 @@ const dialogMainText = computed(() => {
   return 'Вы уверены, что хотите изменить статус заявки?'
 })
 
-function statusLabel (s) {
+function statusLabel(s) {
   const map = {
     NEW: 'Новая',
     ACCEPTED: 'Принята',
     IN_WORK: 'В обработке',
     DELAYED: 'Задерживается',
     READY: 'Готово',
-    REJECTED: 'Отклонена'
+    REJECTED: 'Отклонена',
+    ARCHIVED: 'В архиве',
+    CANCELLED: 'Отменена'
   }
   return map[s] || s
 }
 
-function statusColor (s) {
+function statusColor(s) {
   const map = {
     NEW: 'grey-8',
     ACCEPTED: 'blue-7',
     IN_WORK: 'orange-8',
     DELAYED: 'brown-6',
     READY: 'green-7',
-    REJECTED: 'red-7'
+    REJECTED: 'red-7',
+    ARCHIVED: 'blue-grey-7',
+    CANCELLED: 'deep-orange-6'
   }
   return map[s] || 'grey-7'
 }
 
-function nowText () {
-  return new Date().toLocaleString('ru-RU')
+function formatDate(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('ru-RU')
 }
 
-function addHistory (title, body, actor = 'sec_f01') {
-  history.value.unshift({
-    id: Date.now() + Math.random(),
-    title,
-    subtitle: `${nowText()} • ${actor}`,
-    body
-  })
+function formatDateTime(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('ru-RU')
 }
 
-function pushStatusHistory (newStatus) {
-  const last = statusHistory.value[statusHistory.value.length - 1]
-  if (last !== newStatus) {
-    statusHistory.value.push(newStatus)
+function normalizeRequest(data) {
+  const courseGroup = [data.course, data.groupName].filter(Boolean).join(' / ')
+
+  return {
+    id: data.id,
+    fio: data.studentFullName || '—',
+    courseGroup: courseGroup || '—',
+    facultyId: data.facultyId,
+    facultyName: data.facultyName,
+    purpose: data.purpose || '—',
+    qty: data.copiesCount || 1,
+    type: data.certificateType,
+    periodFrom: formatDate(data.periodFrom),
+    periodTo: formatDate(data.periodTo),
+    createdAt: formatDateTime(data.createdAt),
+    status: data.status,
+    archived: data.status === 'ARCHIVED',
+    registrationNumber: data.registrationNumber,
+    registrationYear: data.registrationYear,
+    registeredAt: data.registeredAt ? formatDateTime(data.registeredAt) : null,
+    registeredBy: 'sec_f01',
+    studentComment: data.studentComment || '',
+    secretaryComment: data.secretaryComment || ''
   }
 }
 
-function goBack () {
+function buildStatusHistory(items) {
+  const statuses = []
+
+  items
+    .filter(item => item.actionType === 'CREATE' || item.actionType === 'STATUS_CHANGE')
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .forEach(item => {
+      const status = item.newStatus || (item.actionType === 'CREATE' ? 'NEW' : null)
+      if (status) statuses.push(status)
+    })
+
+  return statuses.length ? statuses : ['NEW']
+}
+
+function normalizeHistory(items) {
+  return items
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(item => {
+      let title = 'Изменение'
+      let body = item.comment || ''
+
+      if (item.actionType === 'CREATE') {
+        title = 'Заявка создана'
+        body = item.comment || 'Студент создал заявку на справку.'
+      } else if (item.actionType === 'STATUS_CHANGE') {
+        title = 'Статус изменён'
+        body = item.comment || `Новый статус: ${statusLabel(item.newStatus)}.`
+      } else if (item.actionType === 'STUDENT_COMMENT') {
+        title = 'Комментарий студента'
+      } else if (item.actionType === 'SECRETARY_COMMENT') {
+        title = 'Комментарий секретаря'
+      } else if (item.actionType === 'ARCHIVE') {
+        title = 'Архивация'
+      }
+
+      return {
+        id: item.id,
+        title,
+        subtitle: `${formatDateTime(item.createdAt)} • ${item.actorLogin || item.actorRole || 'system'}`,
+        body
+      }
+    })
+}
+
+function goBack() {
   router.push('/secretary')
 }
 
-function openStatusDialog (action) {
+function openStatusDialog(action) {
   statusDialog.action = action
   statusDialog.reason = ''
   statusDialog.open = true
 }
 
-function confirmStatusAction () {
+async function loadRequestCard() {
+  loading.value = true
+  error.value = ''
+
+  try {
+    const [{ data: requestData }, { data: historyData }] = await Promise.all([
+      getRequestById(requestId),
+      getRequestHistory()
+    ])
+
+    const relatedHistory = historyData.filter(item => Number(item.requestId) === requestId)
+
+    request.value = normalizeRequest(requestData)
+    history.value = normalizeHistory(relatedHistory)
+    statusHistory.value = buildStatusHistory(relatedHistory)
+    commentText.value = requestData.secretaryComment || ''
+  } catch (err) {
+    console.error(err)
+    error.value = 'Не удалось загрузить карточку заявки'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function applyStatus(newStatus, comment = null) {
+  await updateRequestStatus(requestId, newStatus)
+  await loadRequestCard()
+
+  if (comment) {
+    $q.notify({
+      type: 'positive',
+      message: comment,
+      position: 'top'
+    })
+  }
+}
+
+async function confirmStatusAction() {
   if (statusDialog.action === 'REJECTED' && !statusDialog.reason.trim()) {
     $q.notify({
       type: 'negative',
@@ -421,85 +524,57 @@ function confirmStatusAction () {
   }
 
   if (statusDialog.action === 'ROLLBACK') {
-    confirmRollbackStatus()
+    await confirmRollbackStatus()
     return
   }
 
-  if (statusDialog.action === 'ACCEPTED') {
-    request.value.status = 'ACCEPTED'
-    pushStatusHistory('ACCEPTED')
-    request.value.registrationNumber = 16
-    request.value.registrationYear = 2026
-    request.value.registeredAt = nowText()
-    request.value.registeredBy = 'sec_f01'
+  try {
+    if (statusDialog.action === 'ACCEPTED') {
+      await acceptRequest(requestId)
+      await loadRequestCard()
 
-    addHistory(
-      'Заявка принята',
-      `Присвоен регистрационный номер ${registrationLabel.value}.`
-    )
+      $q.notify({
+        type: 'positive',
+        message: 'Заявка принята и зарегистрирована.',
+        position: 'top'
+      })
 
-    $q.notify({
-      type: 'positive',
-      message: 'Заявка принята, номер присвоен.',
-      position: 'top'
-    })
-  }
+      statusDialog.open = false
+      return
+    }
 
-  if (statusDialog.action === 'IN_WORK') {
-    request.value.status = 'IN_WORK'
-    pushStatusHistory('IN_WORK')
+    if (statusDialog.action === 'IN_WORK') {
+      await applyStatus('IN_WORK', 'Заявка переведена в обработку.')
+    }
 
-    addHistory('Статус изменён', 'Заявка переведена в обработку.')
+    if (statusDialog.action === 'DELAYED') {
+      await applyStatus('DELAYED', 'Для заявки отмечена задержка.')
+    }
 
-    $q.notify({
-      type: 'positive',
-      message: 'Заявка переведена в обработку.',
-      position: 'top'
-    })
-  }
+    if (statusDialog.action === 'READY') {
+      await applyStatus('READY', 'Справка отмечена как готовая.')
+    }
 
-  if (statusDialog.action === 'DELAYED') {
-    request.value.status = 'DELAYED'
-    pushStatusHistory('DELAYED')
+    if (statusDialog.action === 'REJECTED') {
+      await applyStatus('REJECTED', 'Заявка отклонена.')
+      if (statusDialog.reason.trim()) {
+        await updateSecretaryComment(requestId, `Причина отклонения: ${statusDialog.reason.trim()}`)
+        await loadRequestCard()
+      }
+    }
 
-    addHistory('Статус изменён', 'По заявке зафиксирована задержка.')
-
-    $q.notify({
-      type: 'warning',
-      message: 'Для заявки отмечена задержка.',
-      position: 'top'
-    })
-  }
-
-  if (statusDialog.action === 'READY') {
-    request.value.status = 'READY'
-    pushStatusHistory('READY')
-
-    addHistory('Статус изменён', 'Справка подготовлена и готова к выдаче.')
-
-    $q.notify({
-      type: 'positive',
-      message: 'Справка отмечена как готовая.',
-      position: 'top'
-    })
-  }
-
-  if (statusDialog.action === 'REJECTED') {
-    request.value.status = 'REJECTED'
-    pushStatusHistory('REJECTED')
-
-    addHistory('Заявка отклонена', statusDialog.reason.trim())
+    statusDialog.open = false
+  } catch (err) {
+    console.error(err)
     $q.notify({
       type: 'negative',
-      message: 'Заявка отклонена.',
+      message: 'Не удалось изменить статус заявки.',
       position: 'top'
     })
   }
-
-  statusDialog.open = false
 }
 
-function confirmRollbackStatus () {
+async function confirmRollbackStatus() {
   if (statusHistory.value.length < 2 || request.value.status === 'NEW') {
     $q.notify({
       type: 'negative',
@@ -510,48 +585,48 @@ function confirmRollbackStatus () {
     return
   }
 
-  const currentStatus = statusHistory.value.pop()
-  const previousStatus = statusHistory.value[statusHistory.value.length - 1]
+  const previousStatus = statusHistory.value[statusHistory.value.length - 2]
 
-  request.value.status = previousStatus
-
-  addHistory(
-    'Откат статуса',
-    `Статус изменён обратно: ${statusLabel(currentStatus)} → ${statusLabel(previousStatus)}.`
-  )
-
-  statusDialog.open = false
-
-  $q.notify({
-    type: 'warning',
-    message: `Статус возвращён: ${statusLabel(previousStatus)}.`,
-    position: 'top'
-  })
+  try {
+    await applyStatus(previousStatus, `Статус возвращён: ${statusLabel(previousStatus)}.`)
+    statusDialog.open = false
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось вернуть предыдущий статус.',
+      position: 'top'
+    })
+  }
 }
 
-function archiveRequest () {
-  request.value.archived = true
-  addHistory('Архивация', 'Заявка перемещена в архив.')
-
-  $q.notify({
-    type: 'positive',
-    message: 'Заявка перемещена в архив.',
-    position: 'top'
-  })
+async function archiveRequest() {
+  try {
+    await applyStatus('ARCHIVED', 'Заявка перемещена в архив.')
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось архивировать заявку.',
+      position: 'top'
+    })
+  }
 }
 
-function unarchiveRequest () {
-  request.value.archived = false
-  addHistory('Восстановление', 'Заявка возвращена из архива.')
-
-  $q.notify({
-    type: 'positive',
-    message: 'Заявка возвращена из архива.',
-    position: 'top'
-  })
+async function unarchiveRequest() {
+  try {
+    await applyStatus('ACCEPTED', 'Заявка возвращена из архива.')
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось вернуть заявку из архива.',
+      position: 'top'
+    })
+  }
 }
 
-function saveComment () {
+async function saveComment() {
   if (!commentText.value.trim()) {
     $q.notify({
       type: 'negative',
@@ -561,18 +636,36 @@ function saveComment () {
     return
   }
 
-  addHistory('Комментарий', commentText.value.trim())
-  commentText.value = ''
+  try {
+    await updateSecretaryComment(requestId, commentText.value.trim())
+    await loadRequestCard()
 
-  $q.notify({
-    type: 'positive',
-    message: 'Комментарий сохранён.',
-    position: 'top'
-  })
+    $q.notify({
+      type: 'positive',
+      message: 'Комментарий сохранён.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось сохранить комментарий.',
+      position: 'top'
+    })
+  }
 }
+
+onMounted(() => {
+  loadRequestCard()
+})
 </script>
 
 <style scoped>
+.secretary-page {
+  background: #f7f7f8;
+  min-height: 100%;
+}
+
 .card {
   border-radius: 14px;
 }
