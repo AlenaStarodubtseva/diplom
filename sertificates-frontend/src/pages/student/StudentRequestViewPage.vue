@@ -1,7 +1,12 @@
 <template>
-  <q-page class="q-pa-md">
-    <div class="q-mb-md row items-center justify-between">
-      <div class="text-h6">Справка об обучении №{{ req?.number }}</div>
+  <q-page class="q-pa-md page-bg">
+    <div class="page-header q-mb-md row items-center justify-between">
+      <div>
+        <div class="text-h5 text-weight-medium">Справка об обучении №{{ req?.number }}</div>
+        <div v-if="req" class="text-caption text-grey-7 q-mt-xs">
+          от {{ req.date }}
+        </div>
+      </div>
 
       <q-btn
         flat
@@ -12,81 +17,124 @@
       />
     </div>
 
-    <q-card class="q-pa-md card" v-if="req">
-      <div class="text-h6 q-mb-sm">Справка об обучении №{{ req.number }}</div>
-      <div class="text-caption text-grey-7 q-mb-md">от {{ req.date }}</div>
+    <q-card class="main-card" flat v-if="req">
+      <q-card-section class="q-pa-lg">
 
-      <div class="q-mb-sm row items-center">
-        <b>Статус:</b>
-        <q-badge :color="statusColor(req.status)" text-color="white" class="q-ml-sm">
-          {{ req.statusText }}
-        </q-badge>
-      </div>
-
-      <q-banner
-        v-if="isCancelled"
-        inline-actions
-        rounded
-        class="bg-orange-1 text-deep-orange q-mb-md"
-      >
-        Заявка отменена. Отправка новых комментариев недоступна.
-      </q-banner>
-
-      <div class="q-mb-sm"><b>Нужна электронная копия:</b> {{ req.needScan ? 'Да' : 'Нет' }}</div>
-
-      <div class="q-mt-md text-subtitle2">Получатель</div>
-      <div><b>ФИО:</b> {{ req.fio }}</div>
-      <div><b>Курс:</b> {{ req.course || '—' }}</div>
-      <div><b>Группа:</b> {{ req.group || '—' }}</div>
-
-      <div class="q-mt-md"><b>Куда требуется справка:</b> {{ req.purpose }}</div>
-      <div class="q-mt-sm"><b>Последний комментарий студента:</b> {{ req.studentComment || 'Комментарий отсутствует' }}</div>
-
-      <q-separator class="q-my-md" />
-
-      <div class="text-subtitle2 q-mb-sm">Ваш комментарий к заявке</div>
-      <div class="row items-center q-col-gutter-sm">
-        <div class="col">
-          <q-input
-            outlined
-            v-model="newComment"
-            placeholder="Комментарий..."
-            :disable="isCancelled"
-          />
+        <div class="top-status row items-center justify-between q-col-gutter-md">
+          <div class="col-12 col-md">
+            <div class="row items-center q-gutter-sm">
+              <span class="text-subtitle1 text-weight-medium">Статус заявки</span>
+              <q-badge :color="statusColor(req.status)" text-color="white" class="status-badge">
+                {{ req.statusText }}
+              </q-badge>
+            </div>
+            <div class="text-caption text-grey-7 q-mt-xs">
+              Актуальное состояние обработки вашей справки
+            </div>
+          </div>
         </div>
-        <div class="col-auto">
-          <q-btn
-            outline
-            label="Отправить"
-            :loading="savingComment"
-            :disable="isCancelled || !newComment.trim()"
-            @click="confirmSendComment"
-          />
+
+        <q-banner
+          v-if="isCancelled"
+          rounded
+          class="cancel-banner q-mt-md"
+        >
+          <template #avatar>
+            <q-icon name="warning_amber" size="24px" />
+          </template>
+          Заявка отменена. Отправка новых комментариев недоступна.
+        </q-banner>
+
+        <div class="info-grid q-mt-lg">
+          <q-card flat bordered class="info-card">
+            <q-card-section>
+              <div class="section-title">Получатель</div>
+              <div class="info-row"><span>ФИО</span><b>{{ req.fio }}</b></div>
+              <div class="info-row"><span>Курс</span><b>{{ req.course || '—' }}</b></div>
+              <div class="info-row"><span>Группа</span><b>{{ req.group || '—' }}</b></div>
+            </q-card-section>
+          </q-card>
+
+          <q-card flat bordered class="info-card">
+            <q-card-section>
+              <div class="section-title">Параметры справки</div>
+              <div class="info-row"><span>Куда требуется</span><b>{{ req.purpose }}</b></div>
+              <div class="info-row"><span>Электронная копия</span><b>{{ req.needScan ? 'Да' : 'Нет' }}</b></div>
+              <div class="info-row"><span>Последний комментарий</span><b>{{ req.studentComment || 'Комментарий отсутствует' }}</b></div>
+            </q-card-section>
+          </q-card>
         </div>
-      </div>
 
-      <div class="q-mt-md" v-if="!isCancelled">
-        <q-btn
-          color="negative"
-          flat
-          label="Отменить заявку"
-          :loading="savingCancel"
-          @click="confirmCancelRequest"
-        />
-      </div>
+        <div class="q-mt-lg">
+          <div class="section-title q-mb-sm">Ваш комментарий к заявке</div>
 
-      <div class="text-subtitle2 q-mt-lg q-mb-sm">История обработки</div>
-      <div v-for="h in history" :key="h.key" class="text-body2 q-mb-xs">
-        {{ h.dt }} — {{ h.text }}
-      </div>
-      <div v-if="!history.length" class="text-body2 text-grey-7">
-        История пока отсутствует
-      </div>
+          <div class="comment-block">
+            <q-input
+              outlined
+              v-model="newComment"
+              type="textarea"
+              autogrow
+              placeholder="Введите комментарий..."
+              :disable="isCancelled"
+              class="comment-input"
+            />
+
+            <div class="comment-actions">
+              <q-btn
+                unelevated
+                color="primary"
+                class="send-btn"
+                label="Отправить"
+                :loading="savingComment"
+                :disable="isCancelled || !newComment.trim()"
+                @click="confirmSendComment"
+              />
+            </div>
+          </div>
+
+          <div v-if="!isCancelled" class="cancel-wrap">
+            <q-btn
+              flat
+              color="negative"
+              icon="close"
+              class="cancel-btn"
+              label="Отменить заявку"
+              :loading="savingCancel"
+              @click="confirmCancelRequest"
+            />
+          </div>
+        </div>
+
+        <div class="q-mt-xl">
+          <div class="section-title q-mb-md">История обработки</div>
+
+          <div v-if="history.length" class="timeline-wrap">
+            <div
+              v-for="h in history"
+              :key="h.key"
+              class="timeline-item"
+            >
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-date">{{ h.dt }}</div>
+                <div class="timeline-text">{{ h.text }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-body2 text-grey-7">
+            История пока отсутствует
+          </div>
+        </div>
+
+      </q-card-section>
     </q-card>
 
-    <q-card v-else class="q-pa-md card">
-      <div v-if="loading" class="text-grey-7">Загрузка...</div>
-      <div v-else-if="error" class="text-negative">{{ error }}</div>
+    <q-card v-else class="main-card" flat>
+      <q-card-section class="q-pa-lg">
+        <div v-if="loading" class="text-grey-7">Загрузка...</div>
+        <div v-else-if="error" class="text-negative">{{ error }}</div>
+      </q-card-section>
     </q-card>
   </q-page>
 </template>
@@ -133,15 +181,15 @@ function statusLabel(status) {
 
 function statusColor(status) {
   return {
-    NEW: 'grey',
-    ACCEPTED: 'blue',
-    IN_WORK: 'orange',
-    DELAYED: 'brown',
-    READY: 'green',
-    REJECTED: 'red',
-    ARCHIVED: 'grey-7',
-    CANCELLED: 'deep-orange'
-  }[status] || 'grey'
+    NEW: 'grey-7',
+    ACCEPTED: 'blue-7',
+    IN_WORK: 'orange-8',
+    DELAYED: 'brown-6',
+    READY: 'green-7',
+    REJECTED: 'red-7',
+    ARCHIVED: 'blue-grey-6',
+    CANCELLED: 'deep-orange-6'
+  }[status] || 'grey-7'
 }
 
 function formatDate(value) {
@@ -334,7 +382,146 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.card {
+.page-bg {
+  background: #f7f7f8;
+  min-height: 100%;
+}
+
+.page-header {
+  padding: 4px 2px 0;
+}
+
+.main-card {
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(24, 39, 75, 0.08);
+  background: #ffffff;
+}
+
+.status-badge {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.cancel-banner {
+  background: #fff3e8;
+  color: #c24e00;
+  border: 1px solid #ffd7b8;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.info-card {
+  border-radius: 16px;
+  background: #fafafa;
+}
+
+.info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.info-row span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.comment-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.send-btn {
+  border-radius: 12px;
+  padding: 10px 28px;
+  font-weight: 500;
+  background: #8b0015 !important;
+}
+
+.send-btn:hover {
+  background: #a3001b !important;
+}
+
+.cancel-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.cancel-btn {
+  opacity: 0.7;
+  transition: 0.2s;
+}
+
+.cancel-btn:hover {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.comment-input :deep(.q-field__control) {
   border-radius: 14px;
+}
+
+.timeline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #8b0015;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.timeline-content {
+  background: #fafafa;
+  border-radius: 14px;
+  padding: 10px 14px;
+  width: 100%;
+}
+
+.timeline-date {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.timeline-text {
+  font-size: 14px;
+  color: #111827;
+}
+
+@media (max-width: 900px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

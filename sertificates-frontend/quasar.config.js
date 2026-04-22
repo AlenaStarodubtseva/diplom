@@ -43,7 +43,7 @@ export default defineConfig((/* ctx */) => {
     framework: {
       config: {},
 
-      plugins: ['Notify'],   // ← ВОТ ЭТО МЫ ДОБАВИЛИ
+      plugins: ['Notify', 'Dialog'],
     },
 
     animations: [],
