@@ -19,7 +19,6 @@
 
     <q-card class="main-card" flat v-if="req">
       <q-card-section class="q-pa-lg">
-
         <div class="top-status row items-center justify-between q-col-gutter-md">
           <div class="col-12 col-md">
             <div class="row items-center q-gutter-sm">
@@ -70,10 +69,12 @@
 
           <div class="comment-block">
             <q-input
-              outlined
               v-model="newComment"
+              outlined
+              color="dark"
               type="textarea"
               autogrow
+              spellcheck="false"
               placeholder="Введите комментарий..."
               :disable="isCancelled"
               class="comment-input"
@@ -126,7 +127,6 @@
             История пока отсутствует
           </div>
         </div>
-
       </q-card-section>
     </q-card>
 
@@ -476,8 +476,37 @@ onMounted(async () => {
   transform: scale(1.05);
 }
 
+/* обычное состояние */
 .comment-input :deep(.q-field__control) {
   border-radius: 14px;
+}
+
+/* quasar outlined рамка */
+.comment-input :deep(.q-field--outlined .q-field__control:before) {
+  border: 1px solid #d1d5db !important;
+}
+
+.comment-input :deep(.q-field--outlined.q-field--hovered .q-field__control:before) {
+  border-color: #8b0015 !important;
+}
+
+/* фокус — перебиваем синий */
+.comment-input :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
+  border: 2px solid #8b0015 !important;
+}
+
+.comment-input :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
+  border: 2px solid #8b0015 !important;
+}
+
+.comment-input :deep(.q-field--focused .q-field__control) {
+  box-shadow: 0 0 0 2px rgba(139, 0, 21, 0.12);
+}
+
+/* каретка тоже бордовая */
+.comment-input :deep(textarea),
+.comment-input :deep(.q-field__native) {
+  caret-color: #8b0015;
 }
 
 .timeline-wrap {
