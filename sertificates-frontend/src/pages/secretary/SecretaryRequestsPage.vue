@@ -38,7 +38,7 @@
               color="primary"
               icon="add"
               label="Создать заявку"
-              @click="$router.push('/manual-request')"
+              @click="$router.push('/student/new')"
             />
           </div>
         </div>

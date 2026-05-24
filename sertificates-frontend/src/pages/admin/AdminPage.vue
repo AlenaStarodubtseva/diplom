@@ -43,7 +43,7 @@
                   color="primary"
                   icon="add"
                   label="Создать заявку"
-                  @click="$router.push('/manual-request')"
+                  @click="$router.push('/student/new')"
                 />
               </div>
             </div>
@@ -241,7 +241,7 @@
                   dense
                   outlined
                   debounce="300"
-                  placeholder="Поиск по логину / ФИО / роли / факультету"
+                  placeholder="Поиск по логину / ФИО / роли / факультету / источнику"
                 >
                   <template #append>
                     <q-icon name="search" />
@@ -263,6 +263,44 @@
             <q-banner rounded class="bg-blue-1 text-black q-mb-md">
               В демонстрационной версии доступы сохраняются в браузере. Для диплома это можно описать как прототип механизма управления правами.
             </q-banner>
+
+            <div class="row q-col-gutter-sm q-mb-md">
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-card flat bordered class="stat-card">
+                  <q-card-section>
+                    <div class="text-grey-7">Всего доступов</div>
+                    <div class="text-h6 text-weight-bold">{{ accessRows.length }}</div>
+                  </q-card-section>
+                </q-card>
+              </div>
+
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-card flat bordered class="stat-card">
+                  <q-card-section>
+                    <div class="text-grey-7">Активных</div>
+                    <div class="text-h6 text-weight-bold text-positive">{{ activeAccessCount }}</div>
+                  </q-card-section>
+                </q-card>
+              </div>
+
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-card flat bordered class="stat-card">
+                  <q-card-section>
+                    <div class="text-grey-7">Секретарей</div>
+                    <div class="text-h6 text-weight-bold">{{ secretaryAccessCount }}</div>
+                  </q-card-section>
+                </q-card>
+              </div>
+
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-card flat bordered class="stat-card">
+                  <q-card-section>
+                    <div class="text-grey-7">Администраторов</div>
+                    <div class="text-h6 text-weight-bold">{{ adminAccessCount }}</div>
+                  </q-card-section>
+                </q-card>
+              </div>
+            </div>
 
             <q-table
               :rows="filteredAccessRows"
@@ -310,6 +348,31 @@
                   <q-chip dense :color="props.row.active ? 'green-7' : 'grey-6'" text-color="white">
                     {{ props.row.active ? 'Активен' : 'Отключен' }}
                   </q-chip>
+                </q-td>
+              </template>
+
+              <template #body-cell-source="props">
+                <q-td :props="props">
+                  <q-chip dense outline color="grey-7" text-color="grey-8">
+                    {{ props.row.source || 'Локальный доступ' }}
+                  </q-chip>
+                </q-td>
+              </template>
+
+              <template #body-cell-createdAt="props">
+                <q-td :props="props">
+                  {{ formatDate(props.row.createdAt) }}
+                </q-td>
+              </template>
+
+              <template #body-cell-updatedAt="props">
+                <q-td :props="props">
+                  <div>
+                    {{ formatDate(props.row.updatedAt) }}
+                  </div>
+                  <div class="text-caption text-grey-6">
+                    {{ props.row.updatedBy ? `изменил: ${props.row.updatedBy}` : '' }}
+                  </div>
                 </q-td>
               </template>
 
@@ -442,7 +505,7 @@
     </q-card>
 
     <!-- Диалог доступа -->
-    <q-dialog v-model="accessDialog.open">
+    <q-dialog v-model="accessDialog.open" persistent>
       <q-card style="min-width: 560px; max-width: 95vw">
         <q-card-section class="row items-center">
           <div class="text-h6">
@@ -460,6 +523,7 @@
             outlined
             dense
             label="Логин"
+            hint="Можно использовать латинские буквы, цифры и символ _"
           />
 
           <q-input
@@ -487,6 +551,8 @@
             dense
             multiple
             use-chips
+            use-input
+            input-debounce="0"
             clearable
             :options="facultyOptions"
             emit-value
@@ -503,6 +569,16 @@
             Администратор имеет доступ ко всем факультетам.
           </q-banner>
 
+          <q-select
+            v-model="accessDialog.form.source"
+            outlined
+            dense
+            :options="sourceOptions"
+            emit-value
+            map-options
+            label="Источник доступа"
+          />
+
           <q-toggle
             v-model="accessDialog.form.active"
             color="primary"
@@ -518,7 +594,7 @@
     </q-dialog>
 
     <!-- Диалог факультета -->
-    <q-dialog v-model="facultyDialog.open">
+    <q-dialog v-model="facultyDialog.open" persistent>
       <q-card style="min-width: 520px; max-width: 95vw">
         <q-card-section class="row items-center">
           <div class="text-h6">
@@ -630,11 +706,28 @@ const roleOptions = [
   { label: 'Секретарь', value: 'SECRETARY' }
 ]
 
+const sourceOptions = [
+  { label: 'Локальный доступ', value: 'Локальный доступ' },
+  { label: 'Campus БГПУ', value: 'Campus БГПУ' }
+]
+
 const facultyOptions = computed(() =>
   faculties.value.map((f) => ({
     label: `${f.code} — ${f.name}`,
     value: f.code
   }))
+)
+
+const activeAccessCount = computed(() =>
+  accessRows.value.filter((x) => x.active).length
+)
+
+const secretaryAccessCount = computed(() =>
+  accessRows.value.filter((x) => x.role === 'SECRETARY').length
+)
+
+const adminAccessCount = computed(() =>
+  accessRows.value.filter((x) => x.role === 'ADMIN').length
 )
 
 const requestColumns = [
@@ -658,6 +751,9 @@ const accessColumns = [
   { name: 'role', label: 'Роль', field: 'role', align: 'left' },
   { name: 'facultyCodes', label: 'Факультеты', field: 'facultyCodes', align: 'left' },
   { name: 'active', label: 'Статус', field: 'active', align: 'left' },
+  { name: 'source', label: 'Источник', field: 'source', align: 'left' },
+  { name: 'createdAt', label: 'Создан', field: 'createdAt', align: 'left', sortable: true },
+  { name: 'updatedAt', label: 'Изменён', field: 'updatedAt', align: 'left', sortable: true },
   { name: 'actions', label: '', field: 'actions', align: 'right' }
 ]
 
@@ -714,7 +810,9 @@ const filteredAccessRows = computed(() => {
       row.fio,
       roleLabel(row.role),
       facultyText,
-      row.active ? 'активен' : 'отключен'
+      row.active ? 'активен' : 'отключен',
+      row.source || '',
+      row.updatedBy || ''
     ]
       .join(' ')
       .toLowerCase()
@@ -740,7 +838,11 @@ const accessDialog = ref({
     fio: '',
     role: 'SECRETARY',
     facultyCodes: [],
-    active: true
+    active: true,
+    source: 'Локальный доступ',
+    createdAt: null,
+    updatedAt: null,
+    updatedBy: null
   }
 })
 
@@ -797,12 +899,25 @@ function loadAccessRows() {
     const saved = localStorage.getItem(ACCESS_STORAGE_KEY)
 
     if (saved) {
-      accessRows.value = JSON.parse(saved)
+      const parsed = JSON.parse(saved)
+
+      accessRows.value = parsed.map((row) => ({
+        ...row,
+        source: row.source || 'Локальный доступ',
+        createdAt: row.createdAt || new Date().toISOString(),
+        updatedAt: row.updatedAt || null,
+        updatedBy: row.updatedBy || null
+      }))
+
+      sortAccessRows()
+      saveAccessRowsToStorage()
       return
     }
   } catch (err) {
     console.error(err)
   }
+
+  const now = new Date().toISOString()
 
   accessRows.value = [
     {
@@ -811,7 +926,11 @@ function loadAccessRows() {
       fio: 'Системный администратор',
       role: 'ADMIN',
       facultyCodes: [],
-      active: true
+      active: true,
+      source: 'Локальный доступ',
+      createdAt: now,
+      updatedAt: null,
+      updatedBy: null
     },
     {
       id: 2,
@@ -819,7 +938,11 @@ function loadAccessRows() {
       fio: 'Секретарь ФФМОиТ',
       role: 'SECRETARY',
       facultyCodes: ['F01'],
-      active: true
+      active: true,
+      source: 'Campus БГПУ',
+      createdAt: now,
+      updatedAt: null,
+      updatedBy: null
     },
     {
       id: 3,
@@ -827,15 +950,29 @@ function loadAccessRows() {
       fio: 'Секретарь ФПП',
       role: 'SECRETARY',
       facultyCodes: ['F02'],
-      active: true
+      active: true,
+      source: 'Campus БГПУ',
+      createdAt: now,
+      updatedAt: null,
+      updatedBy: null
     }
   ]
 
+  sortAccessRows()
   saveAccessRowsToStorage()
 }
 
 function saveAccessRowsToStorage() {
   localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessRows.value))
+}
+
+function sortAccessRows() {
+  accessRows.value.sort((a, b) => {
+    if (a.role === 'ADMIN' && b.role !== 'ADMIN') return -1
+    if (a.role !== 'ADMIN' && b.role === 'ADMIN') return 1
+
+    return a.login.localeCompare(b.login)
+  })
 }
 
 function normalizeRequestRow(r) {
@@ -863,8 +1000,13 @@ function facultyCodeById(id) {
 }
 
 function formatDate(value) {
-  if (!value) return null
-  return new Date(value).toLocaleDateString('ru-RU')
+  if (!value) return '—'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return '—'
+
+  return date.toLocaleDateString('ru-RU')
 }
 
 function formatRegistration(row) {
@@ -1042,7 +1184,11 @@ function openCreateAccessDialog() {
       fio: '',
       role: 'SECRETARY',
       facultyCodes: [],
-      active: true
+      active: true,
+      source: 'Локальный доступ',
+      createdAt: null,
+      updatedAt: null,
+      updatedBy: null
     }
   }
 }
@@ -1057,7 +1203,11 @@ function openEditAccessDialog(row) {
       fio: row.fio,
       role: row.role,
       facultyCodes: [...(row.facultyCodes || [])],
-      active: row.active
+      active: row.active,
+      source: row.source || 'Локальный доступ',
+      createdAt: row.createdAt || null,
+      updatedAt: row.updatedAt || null,
+      updatedBy: row.updatedBy || null
     }
   }
 }
@@ -1070,11 +1220,23 @@ function onAccessRoleChange(role) {
 
 function saveAccess() {
   const form = accessDialog.value.form
+  const loginRegex = /^[a-zA-Z0-9_]+$/
 
   if (!form.login?.trim() || !form.fio?.trim() || !form.role) {
     $q.notify({
       type: 'negative',
       message: 'Заполни логин, ФИО и роль.',
+      position: 'top'
+    })
+    return
+  }
+
+  const normalizedLogin = form.login.trim()
+
+  if (!loginRegex.test(normalizedLogin)) {
+    $q.notify({
+      type: 'negative',
+      message: 'Логин может содержать только латинские буквы, цифры и символ _.',
       position: 'top'
     })
     return
@@ -1088,8 +1250,6 @@ function saveAccess() {
     })
     return
   }
-
-  const normalizedLogin = form.login.trim()
 
   const duplicate = accessRows.value.find((row) =>
     row.login.toLowerCase() === normalizedLogin.toLowerCase() &&
@@ -1105,13 +1265,19 @@ function saveAccess() {
     return
   }
 
+  const now = new Date().toISOString()
+
   const prepared = {
     id: form.id || Date.now(),
     login: normalizedLogin,
     fio: form.fio.trim(),
     role: form.role,
     facultyCodes: form.role === 'ADMIN' ? [] : [...form.facultyCodes],
-    active: form.active
+    active: form.active,
+    source: form.source || 'Локальный доступ',
+    createdAt: form.createdAt || now,
+    updatedAt: accessDialog.value.mode === 'edit' ? now : null,
+    updatedBy: accessDialog.value.mode === 'edit' ? 'admin' : null
   }
 
   if (accessDialog.value.mode === 'create') {
@@ -1122,6 +1288,7 @@ function saveAccess() {
     )
   }
 
+  sortAccessRows()
   saveAccessRowsToStorage()
   accessDialog.value.open = false
 
@@ -1133,12 +1300,29 @@ function saveAccess() {
 }
 
 function toggleAccessStatus(row) {
+  if (row.login === 'admin') {
+    $q.notify({
+      type: 'negative',
+      message: 'Нельзя отключить системного администратора.',
+      position: 'top'
+    })
+    return
+  }
+
+  const now = new Date().toISOString()
+
   accessRows.value = accessRows.value.map((item) =>
     item.id === row.id
-      ? { ...item, active: !item.active }
+      ? {
+          ...item,
+          active: !item.active,
+          updatedAt: now,
+          updatedBy: 'admin'
+        }
       : item
   )
 
+  sortAccessRows()
   saveAccessRowsToStorage()
 
   $q.notify({
@@ -1149,6 +1333,15 @@ function toggleAccessStatus(row) {
 }
 
 function deleteAccess(row) {
+  if (row.login === 'admin') {
+    $q.notify({
+      type: 'negative',
+      message: 'Нельзя удалить системного администратора.',
+      position: 'top'
+    })
+    return
+  }
+
   $q.dialog({
     title: 'Удаление доступа',
     message: `Удалить доступ для пользователя ${row.login}?`,
@@ -1156,6 +1349,7 @@ function deleteAccess(row) {
     persistent: true
   }).onOk(() => {
     accessRows.value = accessRows.value.filter((item) => item.id !== row.id)
+    sortAccessRows()
     saveAccessRowsToStorage()
 
     $q.notify({
@@ -1284,6 +1478,11 @@ onMounted(async () => {
 <style scoped>
 .card {
   border-radius: 14px;
+}
+
+.stat-card {
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .campus-accent {
