@@ -32,8 +32,8 @@ export function updateSecretaryComment(id, comment) {
   return api.patch(`/requests/${id}/secretary-comment`, { comment })
 }
 
-export function updateRequestStatus(id, status) {
-  return api.patch(`/requests/${id}/status`, { status })
+export function updateRequestStatus(id, status, comment = null) {
+  return api.patch(`/requests/${id}/status`, { status, comment })
 }
 
 export function cancelRequest(id) {

@@ -305,6 +305,7 @@
 import { computed, reactive, ref, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from 'stores/auth'
 import {
   getRequestById,
   updateSecretaryComment,
@@ -316,6 +317,7 @@ import { getRequestHistory } from 'src/api/requestHistory'
 const $q = useQuasar()
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
 const requestId = Number(route.params.id)
 
@@ -336,7 +338,7 @@ const statusDialog = reactive({
 const registrationLabel = computed(() => {
   if (!request.value?.registrationNumber) return ''
 
-  const facultyCode = String(request.value.facultyId || 0).padStart(2, '0')
+  const facultyCode = request.value.facultyCode || `F${String(request.value.facultyId || 0).padStart(2, '0')}`
   const regNumber = String(request.value.registrationNumber).padStart(4, '0')
   const year = request.value.registrationYear || new Date().getFullYear()
 
@@ -357,9 +359,11 @@ const dialogMainText = computed(() => {
   if (statusDialog.action === 'ROLLBACK') {
     return 'Вы уверены, что хотите вернуть предыдущий статус?'
   }
+
   if (statusDialog.action === 'REJECTED') {
     return 'Вы уверены, что хотите отклонить заявку?'
   }
+
   return 'Вы уверены, что хотите изменить статус заявки?'
 })
 
@@ -374,6 +378,7 @@ function statusLabel(s) {
     ARCHIVED: 'В архиве',
     CANCELLED: 'Отменена'
   }
+
   return map[s] || s
 }
 
@@ -388,6 +393,7 @@ function statusColor(s) {
     ARCHIVED: 'blue-grey-7',
     CANCELLED: 'deep-orange-6'
   }
+
   return map[s] || 'grey-7'
 }
 
@@ -402,7 +408,9 @@ function formatDateTime(value) {
 }
 
 function normalizeRequest(data) {
-  const courseGroup = [data.course ? `${data.course} курс` : null, data.groupName].filter(Boolean).join(' / ')
+  const courseGroup = [data.course ? `${data.course} курс` : null, data.groupName]
+    .filter(Boolean)
+    .join(' / ')
 
   return {
     id: data.id,
@@ -478,6 +486,11 @@ function normalizeHistory(items) {
 }
 
 function goBack() {
+  if (auth.role === 'ADMIN') {
+    router.push('/admin')
+    return
+  }
+
   router.push('/secretary')
 }
 
@@ -511,14 +524,14 @@ async function loadRequestCard() {
   }
 }
 
-async function applyStatus(newStatus, comment = null) {
-  await updateRequestStatus(requestId, newStatus)
+async function applyStatus(newStatus, message = null, historyComment = null) {
+  await updateRequestStatus(requestId, newStatus, historyComment)
   await loadRequestCard()
 
-  if (comment) {
+  if (message) {
     $q.notify({
       type: 'positive',
-      message: comment,
+      message,
       position: 'top'
     })
   }
@@ -555,23 +568,41 @@ async function confirmStatusAction() {
     }
 
     if (statusDialog.action === 'IN_WORK') {
-      await applyStatus('IN_WORK', 'Заявка переведена в обработку.')
+      await applyStatus(
+        'IN_WORK',
+        'Заявка переведена в обработку.',
+        'Заявка переведена в обработку.'
+      )
     }
 
     if (statusDialog.action === 'DELAYED') {
-      await applyStatus('DELAYED', 'Для заявки отмечена задержка.')
+      await applyStatus(
+        'DELAYED',
+        'Для заявки отмечена задержка.',
+        'Для заявки отмечена задержка.'
+      )
     }
 
     if (statusDialog.action === 'READY') {
-      await applyStatus('READY', 'Справка отмечена как готовая.')
+      await applyStatus(
+        'READY',
+        'Справка отмечена как готовая.',
+        'Справка отмечена как готовая.'
+      )
     }
 
     if (statusDialog.action === 'REJECTED') {
-      await applyStatus('REJECTED', 'Заявка отклонена.')
-      if (statusDialog.reason.trim()) {
-        await updateSecretaryComment(requestId, `Причина отклонения: ${statusDialog.reason.trim()}`)
-        await loadRequestCard()
-      }
+      const reason = `Причина отклонения: ${statusDialog.reason.trim()}`
+
+      await updateRequestStatus(requestId, 'REJECTED', reason)
+      await updateSecretaryComment(requestId, reason)
+      await loadRequestCard()
+
+      $q.notify({
+        type: 'positive',
+        message: 'Заявка отклонена.',
+        position: 'top'
+      })
     }
 
     statusDialog.open = false
@@ -594,6 +625,7 @@ async function confirmRollbackStatus() {
       message: 'Нельзя вернуть предыдущий статус.',
       position: 'top'
     })
+
     statusDialog.open = false
     return
   }
@@ -601,10 +633,16 @@ async function confirmRollbackStatus() {
   const previousStatus = statusHistory.value[statusHistory.value.length - 2]
 
   try {
-    await applyStatus(previousStatus, `Статус возвращён: ${statusLabel(previousStatus)}.`)
+    await applyStatus(
+      previousStatus,
+      `Статус возвращён: ${statusLabel(previousStatus)}.`,
+      `Статус возвращён: ${statusLabel(previousStatus)}.`
+    )
+
     statusDialog.open = false
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось вернуть предыдущий статус.',
@@ -615,9 +653,14 @@ async function confirmRollbackStatus() {
 
 async function archiveRequest() {
   try {
-    await applyStatus('ARCHIVED', 'Заявка перемещена в архив.')
+    await applyStatus(
+      'ARCHIVED',
+      'Заявка перемещена в архив.',
+      'Заявка перемещена в архив.'
+    )
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось архивировать заявку.',
@@ -628,9 +671,14 @@ async function archiveRequest() {
 
 async function unarchiveRequest() {
   try {
-    await applyStatus('ACCEPTED', 'Заявка возвращена из архива.')
+    await applyStatus(
+      'ACCEPTED',
+      'Заявка возвращена из архива.',
+      'Заявка возвращена из архива.'
+    )
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось вернуть заявку из архива.',
@@ -646,6 +694,7 @@ async function saveComment() {
       message: 'Введите комментарий.',
       position: 'top'
     })
+
     return
   }
 
@@ -660,6 +709,7 @@ async function saveComment() {
     })
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось сохранить комментарий.',
