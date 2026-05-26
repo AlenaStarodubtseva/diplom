@@ -43,7 +43,7 @@
                   color="primary"
                   icon="add"
                   label="Создать заявку"
-                  @click="$router.push('/student/new')"
+                  @click="$router.push('/manual-request')"
                 />
               </div>
             </div>
@@ -241,7 +241,7 @@
                   dense
                   outlined
                   debounce="300"
-                  placeholder="Поиск по логину / ФИО / роли / факультету / источнику"
+                  placeholder="Поиск по логину / ФИО / роли / факультету"
                 >
                   <template #append>
                     <q-icon name="search" />
@@ -261,7 +261,7 @@
             </div>
 
             <q-banner rounded class="bg-blue-1 text-black q-mb-md">
-              В демонстрационной версии доступы сохраняются в браузере. Для диплома это можно описать как прототип механизма управления правами.
+              Доступы загружаются из базы данных. Администратор может назначить секретарю один или несколько факультетов.
             </q-banner>
 
             <div class="row q-col-gutter-sm q-mb-md">
@@ -302,7 +302,12 @@
               </div>
             </div>
 
+            <div v-if="accessLoading" class="q-pa-md text-grey-7">
+              Загрузка доступов...
+            </div>
+
             <q-table
+              v-else
               :rows="filteredAccessRows"
               :columns="accessColumns"
               row-key="id"
@@ -318,22 +323,22 @@
                 </q-td>
               </template>
 
-              <template #body-cell-facultyCodes="props">
+              <template #body-cell-facultyIds="props">
                 <q-td :props="props">
                   <span v-if="props.row.role === 'ADMIN'" class="text-grey-7">
                     Все факультеты
                   </span>
 
-                  <div v-else-if="props.row.facultyCodes?.length" class="row q-gutter-xs">
+                  <div v-else-if="props.row.facultyIds?.length" class="row q-gutter-xs">
                     <q-chip
-                      v-for="code in props.row.facultyCodes"
-                      :key="code"
+                      v-for="facultyId in props.row.facultyIds"
+                      :key="facultyId"
                       dense
                       outline
                       color="primary"
                       text-color="primary"
                     >
-                      {{ facultyLabel(code) }}
+                      {{ facultyLabel(facultyId) }}
                     </q-chip>
                   </div>
 
@@ -351,14 +356,6 @@
                 </q-td>
               </template>
 
-              <template #body-cell-source="props">
-                <q-td :props="props">
-                  <q-chip dense outline color="grey-7" text-color="grey-8">
-                    {{ props.row.source || 'Локальный доступ' }}
-                  </q-chip>
-                </q-td>
-              </template>
-
               <template #body-cell-createdAt="props">
                 <q-td :props="props">
                   {{ formatDate(props.row.createdAt) }}
@@ -367,12 +364,7 @@
 
               <template #body-cell-updatedAt="props">
                 <q-td :props="props">
-                  <div>
-                    {{ formatDate(props.row.updatedAt) }}
-                  </div>
-                  <div class="text-caption text-grey-6">
-                    {{ props.row.updatedBy ? `изменил: ${props.row.updatedBy}` : '' }}
-                  </div>
+                  {{ formatDate(props.row.updatedAt) }}
                 </q-td>
               </template>
 
@@ -546,7 +538,7 @@
 
           <q-select
             v-if="accessDialog.form.role === 'SECRETARY'"
-            v-model="accessDialog.form.facultyCodes"
+            v-model="accessDialog.form.facultyIds"
             outlined
             dense
             multiple
@@ -561,23 +553,9 @@
             hint="Можно выбрать один или несколько факультетов"
           />
 
-          <q-banner
-            v-else
-            rounded
-            class="bg-grey-2 text-grey-8"
-          >
+          <q-banner v-else rounded class="bg-grey-2 text-grey-8">
             Администратор имеет доступ ко всем факультетам.
           </q-banner>
-
-          <q-select
-            v-model="accessDialog.form.source"
-            outlined
-            dense
-            :options="sourceOptions"
-            emit-value
-            map-options
-            label="Источник доступа"
-          />
 
           <q-toggle
             v-model="accessDialog.form.active"
@@ -653,11 +631,17 @@ import {
   updateFaculty,
   toggleFacultyActive
 } from 'src/api/faculties'
+import {
+  getAccessAccounts,
+  createAccessAccount,
+  updateAccessAccount,
+  toggleAccessAccountActive,
+  deleteAccessAccount
+} from 'src/api/accessAccounts'
+import { generateCommonRequestDocument } from 'src/api/requestDocuments'
 
 const router = useRouter()
 const $q = useQuasar()
-
-const ACCESS_STORAGE_KEY = 'certificates-admin-access-list'
 
 const tab = ref('requests')
 const requestTab = ref('active')
@@ -672,10 +656,10 @@ const requestsLoading = ref(false)
 const requestsError = ref('')
 const facultiesLoading = ref(false)
 const facultiesError = ref('')
+const accessLoading = ref(false)
 
 const faculties = ref([])
 const requests = ref([])
-
 const accessRows = ref([])
 
 const requestFilters = ref({
@@ -706,15 +690,10 @@ const roleOptions = [
   { label: 'Секретарь', value: 'SECRETARY' }
 ]
 
-const sourceOptions = [
-  { label: 'Локальный доступ', value: 'Локальный доступ' },
-  { label: 'Campus БГПУ', value: 'Campus БГПУ' }
-]
-
 const facultyOptions = computed(() =>
   faculties.value.map((f) => ({
     label: `${f.code} — ${f.name}`,
-    value: f.code
+    value: f.id
   }))
 )
 
@@ -749,9 +728,8 @@ const accessColumns = [
   { name: 'login', label: 'Логин', field: 'login', align: 'left', sortable: true },
   { name: 'fio', label: 'ФИО', field: 'fio', align: 'left', sortable: true },
   { name: 'role', label: 'Роль', field: 'role', align: 'left' },
-  { name: 'facultyCodes', label: 'Факультеты', field: 'facultyCodes', align: 'left' },
+  { name: 'facultyIds', label: 'Факультеты', field: 'facultyIds', align: 'left' },
   { name: 'active', label: 'Статус', field: 'active', align: 'left' },
-  { name: 'source', label: 'Источник', field: 'source', align: 'left' },
   { name: 'createdAt', label: 'Создан', field: 'createdAt', align: 'left', sortable: true },
   { name: 'updatedAt', label: 'Изменён', field: 'updatedAt', align: 'left', sortable: true },
   { name: 'actions', label: '', field: 'actions', align: 'right' }
@@ -780,7 +758,7 @@ const filteredRequests = computed(() => {
         const haystack = [
           r.id,
           r.fio,
-          r.facultyId,
+          facultyLabel(r.facultyId),
           r.courseGroup,
           r.purpose,
           r.registrationNumber ? formatRegistration(r) : ''
@@ -803,16 +781,14 @@ const filteredAccessRows = computed(() => {
 
     const facultyText = row.role === 'ADMIN'
       ? 'все факультеты'
-      : (row.facultyCodes || []).map((code) => facultyLabel(code)).join(' ')
+      : (row.facultyIds || []).map((facultyId) => facultyLabel(facultyId)).join(' ')
 
     return [
       row.login,
       row.fio,
       roleLabel(row.role),
       facultyText,
-      row.active ? 'активен' : 'отключен',
-      row.source || '',
-      row.updatedBy || ''
+      row.active ? 'активен' : 'отключен'
     ]
       .join(' ')
       .toLowerCase()
@@ -837,12 +813,10 @@ const accessDialog = ref({
     login: '',
     fio: '',
     role: 'SECRETARY',
-    facultyCodes: [],
+    facultyIds: [],
     active: true,
-    source: 'Локальный доступ',
     createdAt: null,
-    updatedAt: null,
-    updatedBy: null
+    updatedAt: null
   }
 })
 
@@ -894,76 +868,35 @@ async function loadFaculties() {
   }
 }
 
-function loadAccessRows() {
+async function loadAccessRows() {
+  accessLoading.value = true
+
   try {
-    const saved = localStorage.getItem(ACCESS_STORAGE_KEY)
+    const { data } = await getAccessAccounts()
 
-    if (saved) {
-      const parsed = JSON.parse(saved)
+    accessRows.value = data.map((row) => ({
+      id: row.id,
+      login: row.login,
+      fio: row.fullName,
+      role: row.role,
+      facultyIds: row.facultyIds || [],
+      active: !!row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    }))
 
-      accessRows.value = parsed.map((row) => ({
-        ...row,
-        source: row.source || 'Локальный доступ',
-        createdAt: row.createdAt || new Date().toISOString(),
-        updatedAt: row.updatedAt || null,
-        updatedBy: row.updatedBy || null
-      }))
-
-      sortAccessRows()
-      saveAccessRowsToStorage()
-      return
-    }
+    sortAccessRows()
   } catch (err) {
     console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось загрузить доступы.',
+      position: 'top'
+    })
+  } finally {
+    accessLoading.value = false
   }
-
-  const now = new Date().toISOString()
-
-  accessRows.value = [
-    {
-      id: 1,
-      login: 'admin',
-      fio: 'Системный администратор',
-      role: 'ADMIN',
-      facultyCodes: [],
-      active: true,
-      source: 'Локальный доступ',
-      createdAt: now,
-      updatedAt: null,
-      updatedBy: null
-    },
-    {
-      id: 2,
-      login: 'secretary_f01',
-      fio: 'Секретарь ФФМОиТ',
-      role: 'SECRETARY',
-      facultyCodes: ['F01'],
-      active: true,
-      source: 'Campus БГПУ',
-      createdAt: now,
-      updatedAt: null,
-      updatedBy: null
-    },
-    {
-      id: 3,
-      login: 'secretary_f02',
-      fio: 'Секретарь ФПП',
-      role: 'SECRETARY',
-      facultyCodes: ['F02'],
-      active: true,
-      source: 'Campus БГПУ',
-      createdAt: now,
-      updatedAt: null,
-      updatedBy: null
-    }
-  ]
-
-  sortAccessRows()
-  saveAccessRowsToStorage()
-}
-
-function saveAccessRowsToStorage() {
-  localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessRows.value))
 }
 
 function sortAccessRows() {
@@ -980,7 +913,7 @@ function normalizeRequestRow(r) {
     id: r.id,
     fio: r.studentFullName || '—',
     courseGroup: [r.course ? `${r.course} курс` : null, r.groupName].filter(Boolean).join(' / ') || '—',
-    facultyId: facultyCodeById(r.facultyId),
+    facultyId: r.facultyId,
     purpose: r.purpose || '—',
     qty: r.copiesCount || 1,
     type: r.certificateType,
@@ -994,9 +927,16 @@ function normalizeRequestRow(r) {
   }
 }
 
-function facultyCodeById(id) {
-  const found = faculties.value.find((f) => f.id === id)
-  return found ? found.code : (id ? `F${String(id).padStart(2, '0')}` : '')
+function facultyLabel(facultyId) {
+  if (!facultyId) return '—'
+
+  const faculty = faculties.value.find((f) => f.id === facultyId)
+  return faculty ? `${faculty.code} — ${faculty.name}` : '—'
+}
+
+function facultyCode(facultyId) {
+  const faculty = faculties.value.find((f) => f.id === facultyId)
+  return faculty?.code || ''
 }
 
 function formatDate(value) {
@@ -1011,7 +951,10 @@ function formatDate(value) {
 
 function formatRegistration(row) {
   if (!row.registrationNumber || !row.registrationYear) return ''
-  return `${row.facultyId}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
+
+  const code = facultyCode(row.facultyId)
+
+  return `${code}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
 }
 
 function typeLabel(type) {
@@ -1058,13 +1001,6 @@ function roleColor(role) {
   }
 
   return map[role] || 'grey-7'
-}
-
-function facultyLabel(code) {
-  if (!code) return ''
-
-  const faculty = faculties.value.find((f) => f.code === code)
-  return faculty ? `${faculty.code} — ${faculty.name}` : code
 }
 
 function resetRequestFilters() {
@@ -1132,7 +1068,7 @@ async function bulkUnarchiveRequests() {
   }
 }
 
-function generateCommonDocument() {
+async function generateCommonDocument() {
   if (!selectedRequests.value.length) {
     $q.notify({
       type: 'negative',
@@ -1142,36 +1078,51 @@ function generateCommonDocument() {
     return
   }
 
-  const rows = selectedRequests.value.map((r) => {
-    return [
-      `№ заявки: ${r.id}`,
-      `Рег. номер: ${r.registrationNumber ? formatRegistration(r) : 'не присвоен'}`,
-      `ФИО: ${r.fio}`,
-      `Факультет: ${facultyLabel(r.facultyId)}`,
-      `Курс/группа: ${r.courseGroup}`,
-      `Куда нужна справка: ${r.purpose}`,
-      `Количество: ${r.qty}`,
-      `Тип: ${typeLabel(r.type)}`,
-      `Период: ${r.periodFrom && r.periodTo ? `${r.periodFrom} — ${r.periodTo}` : '—'}`,
-      `Статус: ${statusLabel(r.status)}`
-    ].join('\n')
-  }).join('\n\n--------------------------\n\n')
+  const hasNoStipendRequests = selectedRequests.value.some(
+    (request) => request.type === 'NO_STIPEND'
+  )
 
-  const blob = new Blob([rows], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
+  if (hasNoStipendRequests) {
+    $q.notify({
+      type: 'negative',
+      message: 'Общий документ можно сформировать только для справок с отметкой о стипендии.',
+      position: 'top'
+    })
+    return
+  }
 
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'common_requests_document.txt'
-  link.click()
+  try {
+    const requestIds = selectedRequests.value.map((request) => request.id)
 
-  URL.revokeObjectURL(url)
+    const response = await generateCommonRequestDocument(requestIds)
 
-  $q.notify({
-    type: 'positive',
-    message: 'Общий документ сформирован и скачан.',
-    position: 'top'
-  })
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    })
+
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'Общий_документ.docx'
+    link.click()
+
+    URL.revokeObjectURL(url)
+
+    $q.notify({
+      type: 'positive',
+      message: 'Общий документ сформирован.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.message || 'Не удалось сформировать документ.',
+      position: 'top'
+    })
+  }
 }
 
 function openCreateAccessDialog() {
@@ -1183,12 +1134,10 @@ function openCreateAccessDialog() {
       login: '',
       fio: '',
       role: 'SECRETARY',
-      facultyCodes: [],
+      facultyIds: [],
       active: true,
-      source: 'Локальный доступ',
       createdAt: null,
-      updatedAt: null,
-      updatedBy: null
+      updatedAt: null
     }
   }
 }
@@ -1202,23 +1151,21 @@ function openEditAccessDialog(row) {
       login: row.login,
       fio: row.fio,
       role: row.role,
-      facultyCodes: [...(row.facultyCodes || [])],
+      facultyIds: [...(row.facultyIds || [])],
       active: row.active,
-      source: row.source || 'Локальный доступ',
       createdAt: row.createdAt || null,
-      updatedAt: row.updatedAt || null,
-      updatedBy: row.updatedBy || null
+      updatedAt: row.updatedAt || null
     }
   }
 }
 
 function onAccessRoleChange(role) {
   if (role === 'ADMIN') {
-    accessDialog.value.form.facultyCodes = []
+    accessDialog.value.form.facultyIds = []
   }
 }
 
-function saveAccess() {
+async function saveAccess() {
   const form = accessDialog.value.form
   const loginRegex = /^[a-zA-Z0-9_]+$/
 
@@ -1242,7 +1189,7 @@ function saveAccess() {
     return
   }
 
-  if (form.role === 'SECRETARY' && (!form.facultyCodes || !form.facultyCodes.length)) {
+  if (form.role === 'SECRETARY' && (!form.facultyIds || !form.facultyIds.length)) {
     $q.notify({
       type: 'negative',
       message: 'Для секретаря нужно выбрать хотя бы один факультет.',
@@ -1265,98 +1212,86 @@ function saveAccess() {
     return
   }
 
-  const now = new Date().toISOString()
-
-  const prepared = {
-    id: form.id || Date.now(),
+  const payload = {
     login: normalizedLogin,
-    fio: form.fio.trim(),
+    fullName: form.fio.trim(),
     role: form.role,
-    facultyCodes: form.role === 'ADMIN' ? [] : [...form.facultyCodes],
-    active: form.active,
-    source: form.source || 'Локальный доступ',
-    createdAt: form.createdAt || now,
-    updatedAt: accessDialog.value.mode === 'edit' ? now : null,
-    updatedBy: accessDialog.value.mode === 'edit' ? 'admin' : null
+    isActive: form.active,
+    facultyIds: form.role === 'ADMIN' ? [] : [...form.facultyIds]
   }
 
-  if (accessDialog.value.mode === 'create') {
-    accessRows.value.unshift(prepared)
-  } else {
-    accessRows.value = accessRows.value.map((row) =>
-      row.id === prepared.id ? prepared : row
-    )
-  }
+  try {
+    if (accessDialog.value.mode === 'create') {
+      await createAccessAccount(payload)
+    } else {
+      await updateAccessAccount(form.id, payload)
+    }
 
-  sortAccessRows()
-  saveAccessRowsToStorage()
-  accessDialog.value.open = false
+    accessDialog.value.open = false
+    await loadAccessRows()
 
-  $q.notify({
-    type: 'positive',
-    message: 'Доступ сохранён.',
-    position: 'top'
-  })
-}
-
-function toggleAccessStatus(row) {
-  if (row.login === 'admin') {
     $q.notify({
-      type: 'negative',
-      message: 'Нельзя отключить системного администратора.',
+      type: 'positive',
+      message: 'Доступ сохранён.',
       position: 'top'
     })
-    return
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.message || 'Не удалось сохранить доступ.',
+      position: 'top'
+    })
   }
+}
 
-  const now = new Date().toISOString()
+async function toggleAccessStatus(row) {
+  try {
+    await toggleAccessAccountActive(row.id)
+    await loadAccessRows()
 
-  accessRows.value = accessRows.value.map((item) =>
-    item.id === row.id
-      ? {
-          ...item,
-          active: !item.active,
-          updatedAt: now,
-          updatedBy: 'admin'
-        }
-      : item
-  )
+    $q.notify({
+      type: 'positive',
+      message: row.active ? 'Доступ отключён.' : 'Доступ активирован.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
 
-  sortAccessRows()
-  saveAccessRowsToStorage()
-
-  $q.notify({
-    type: 'positive',
-    message: row.active ? 'Доступ отключён.' : 'Доступ активирован.',
-    position: 'top'
-  })
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.message || 'Не удалось изменить статус доступа.',
+      position: 'top'
+    })
+  }
 }
 
 function deleteAccess(row) {
-  if (row.login === 'admin') {
-    $q.notify({
-      type: 'negative',
-      message: 'Нельзя удалить системного администратора.',
-      position: 'top'
-    })
-    return
-  }
-
   $q.dialog({
     title: 'Удаление доступа',
     message: `Удалить доступ для пользователя ${row.login}?`,
     cancel: true,
     persistent: true
-  }).onOk(() => {
-    accessRows.value = accessRows.value.filter((item) => item.id !== row.id)
-    sortAccessRows()
-    saveAccessRowsToStorage()
+  }).onOk(async () => {
+    try {
+      await deleteAccessAccount(row.id)
+      await loadAccessRows()
 
-    $q.notify({
-      type: 'positive',
-      message: 'Доступ удалён.',
-      position: 'top'
-    })
+      $q.notify({
+        type: 'positive',
+        message: 'Доступ удалён.',
+        position: 'top'
+      })
+    } catch (err) {
+      console.error(err)
+
+      $q.notify({
+        type: 'negative',
+        message: err.response?.data?.message || 'Не удалось удалить доступ.',
+        position: 'top'
+      })
+    }
   })
 }
 
@@ -1429,6 +1364,7 @@ async function saveFaculty() {
     facultyDialog.value.open = false
     await loadFaculties()
     await loadRequests()
+    await loadAccessRows()
 
     $q.notify({
       type: 'positive',
@@ -1451,6 +1387,7 @@ async function toggleFacultyStatus(row) {
     await toggleFacultyActive(row.id)
     await loadFaculties()
     await loadRequests()
+    await loadAccessRows()
 
     $q.notify({
       type: 'positive',
@@ -1470,7 +1407,7 @@ async function toggleFacultyStatus(row) {
 
 onMounted(async () => {
   await loadFaculties()
-  loadAccessRows()
+  await loadAccessRows()
   await loadRequests()
 })
 </script>
