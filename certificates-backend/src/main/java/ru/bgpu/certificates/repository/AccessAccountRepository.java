@@ -9,7 +9,7 @@ import java.util.Optional;
 @Repository
 public interface AccessAccountRepository extends JpaRepository<AccessAccount, Long> {
 
-    Optional<AccessAccount> findByLogin(String login);
-
     boolean existsByLoginIgnoreCase(String login);
+
+    Optional<AccessAccount> findByLoginIgnoreCase(String login);
 }

@@ -7,13 +7,16 @@
           Единый реестр заявок с поиском и фильтрацией
         </div>
       </div>
-
-      <div class="col-auto" v-if="auth.facultyId">
-        <q-chip outline color="primary" text-color="primary">
-          Факультет: {{ auth.facultyId }}
-        </q-chip>
-      </div>
     </div>
+
+    <q-banner rounded class="bg-blue-1 text-black q-mb-md">
+      <div>
+        <b>Пользователь:</b> {{ auth.login || '—' }}
+      </div>
+      <div>
+        <b>Доступные факультеты:</b> {{ availableFacultiesLabel }}
+      </div>
+    </q-banner>
 
     <q-card class="card">
       <q-card-section>
@@ -107,6 +110,7 @@
               label="В архив"
               @click="bulkArchive"
             />
+
             <q-btn
               unelevated
               color="positive"
@@ -152,6 +156,12 @@
                 {{ formatRegistration(props.row) }}
               </span>
               <span v-else class="text-grey-6">Не присвоен</span>
+            </q-td>
+          </template>
+
+          <template #body-cell-faculty="props">
+            <q-td :props="props">
+              {{ facultyLabel(props.row.facultyId) }}
             </q-td>
           </template>
 
@@ -213,6 +223,9 @@ import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from 'stores/auth'
 import { getRequests, updateRequestStatus } from 'src/api/requests'
+import { getFaculties } from 'src/api/faculties'
+import { getAccessAccounts } from 'src/api/accessAccounts'
+import { generateCommonRequestDocument } from 'src/api/requestDocuments'
 
 const router = useRouter()
 const $q = useQuasar()
@@ -224,6 +237,10 @@ const selected = ref([])
 
 const loading = ref(false)
 const error = ref('')
+
+const rows = ref([])
+const faculties = ref([])
+const accessRows = ref([])
 
 const filters = ref({
   type: null,
@@ -251,6 +268,7 @@ const columns = [
   { name: 'registration', label: 'Рег. номер', field: 'registration', align: 'left' },
   { name: 'id', label: '№ заявки', field: 'id', sortable: true, align: 'left' },
   { name: 'fio', label: 'ФИО', field: 'fio', sortable: true, align: 'left' },
+  { name: 'faculty', label: 'Факультет', field: 'faculty', align: 'left' },
   { name: 'courseGroup', label: 'Курс/группа', field: 'courseGroup', align: 'left' },
   { name: 'purpose', label: 'Куда нужна справка', field: 'purpose', align: 'left' },
   { name: 'qty', label: 'Кол-во', field: 'qty', sortable: true, align: 'left' },
@@ -261,48 +279,65 @@ const columns = [
   { name: 'actions', label: '', field: 'actions', align: 'right' }
 ]
 
-const rows = ref([])
-
-async function loadRequests() {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const { data } = await getRequests()
-    rows.value = data.map(normalizeRow)
-  } catch (err) {
-    console.error(err)
-    error.value = 'Не удалось загрузить заявки'
-  } finally {
-    loading.value = false
+const currentAccess = computed(() => {
+  if (auth.role === 'ADMIN') {
+    return {
+      login: auth.login || 'admin',
+      role: 'ADMIN',
+      facultyIds: faculties.value.map(faculty => faculty.id),
+      active: true
+    }
   }
-}
 
-function normalizeRow(r) {
-  return {
-    id: r.id,
-    fio: r.studentFullName || '—',
-    courseGroup: [r.course ? `${r.course} курс` : null, r.groupName].filter(Boolean).join(' / ') || '—',
-    facultyId: r.facultyId ? `F${String(r.facultyId).padStart(2, '0')}` : null,
-    purpose: r.purpose || '—',
-    qty: r.copiesCount || 1,
-    type: r.certificateType,
-    periodFrom: formatDate(r.periodFrom),
-    periodTo: formatDate(r.periodTo),
-    createdAt: formatDate(r.createdAt),
-    status: r.status,
-    archived: r.status === 'ARCHIVED',
-    registrationNumber: r.registrationNumber,
-    registrationYear: r.registrationYear
+  if (auth.role !== 'SECRETARY') {
+    return null
   }
-}
+
+  const login = String(auth.login || '').toLowerCase()
+
+  const account = accessRows.value.find(row =>
+    String(row.login || '').toLowerCase() === login
+  )
+
+  if (account) {
+    return account
+  }
+
+  return null
+})
+
+const availableFacultyIds = computed(() => {
+  if (!currentAccess.value) return []
+
+  if (currentAccess.value.role === 'ADMIN') {
+    return faculties.value.map(faculty => faculty.id)
+  }
+
+  if (currentAccess.value.active === false) {
+    return []
+  }
+
+  return currentAccess.value.facultyIds || []
+})
+
+const availableFacultiesLabel = computed(() => {
+  if (!availableFacultyIds.value.length) {
+    return 'нет доступных факультетов'
+  }
+
+  return availableFacultyIds.value
+    .map(id => facultyLabel(id))
+    .join(', ')
+})
 
 const visibleRows = computed(() => {
-  if (auth.role === 'SECRETARY' && auth.facultyId) {
-    return rows.value.filter((r) => r.facultyId === auth.facultyId)
+  if (auth.role === 'ADMIN') {
+    return rows.value
   }
 
-  return rows.value
+  return rows.value.filter(row =>
+    availableFacultyIds.value.includes(row.facultyId)
+  )
 })
 
 const filteredRows = computed(() => {
@@ -319,6 +354,7 @@ const filteredRows = computed(() => {
         const haystack = [
           r.id,
           r.fio,
+          facultyLabel(r.facultyId),
           r.courseGroup,
           r.purpose,
           r.registrationNumber ? formatRegistration(r) : ''
@@ -333,14 +369,94 @@ const filteredRows = computed(() => {
     })
 })
 
+async function loadData() {
+  loading.value = true
+  error.value = ''
+
+  try {
+    const [
+      requestsResponse,
+      facultiesResponse,
+      accessAccountsResponse
+    ] = await Promise.all([
+      getRequests(),
+      getFaculties(),
+      getAccessAccounts()
+    ])
+
+    faculties.value = facultiesResponse.data.map(faculty => ({
+      id: faculty.id,
+      code: faculty.code,
+      name: faculty.name,
+      active: faculty.isActive !== false
+    }))
+
+    accessRows.value = accessAccountsResponse.data.map(account => ({
+      id: account.id,
+      login: account.login,
+      fio: account.fullName,
+      role: account.role,
+      facultyIds: account.facultyIds || [],
+      active: account.isActive !== false
+    }))
+
+    rows.value = requestsResponse.data.map(normalizeRow)
+  } catch (err) {
+    console.error(err)
+    error.value = 'Не удалось загрузить заявки'
+  } finally {
+    loading.value = false
+  }
+}
+
+function normalizeRow(r) {
+  return {
+    id: r.id,
+    fio: r.studentFullName || '—',
+    courseGroup: [r.course ? `${r.course} курс` : null, r.groupName].filter(Boolean).join(' / ') || '—',
+    facultyId: r.facultyId,
+    purpose: r.purpose || '—',
+    qty: r.copiesCount || 1,
+    type: r.certificateType,
+    periodFrom: formatDate(r.periodFrom),
+    periodTo: formatDate(r.periodTo),
+    createdAt: formatDate(r.createdAt),
+    status: r.status,
+    archived: r.status === 'ARCHIVED',
+    registrationNumber: r.registrationNumber,
+    registrationYear: r.registrationYear
+  }
+}
+
+function facultyLabel(facultyId) {
+  const faculty = faculties.value.find(f => f.id === facultyId)
+
+  if (!faculty) return '—'
+
+  return faculty.code
+    ? `${faculty.code} — ${faculty.name}`
+    : faculty.name
+}
+
+function facultyCode(facultyId) {
+  const faculty = faculties.value.find(f => f.id === facultyId)
+  return faculty?.code || `F${String(facultyId).padStart(2, '0')}`
+}
+
 function formatDate(value) {
   if (!value) return null
-  return new Date(value).toLocaleDateString('ru-RU')
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return null
+
+  return date.toLocaleDateString('ru-RU')
 }
 
 function formatRegistration(row) {
   if (!row.registrationNumber || !row.registrationYear) return ''
-  return `${row.facultyId}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
+
+  return `${facultyCode(row.facultyId)}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
 }
 
 function typeLabel(type) {
@@ -348,6 +464,7 @@ function typeLabel(type) {
     NO_STIPEND: 'Без отметки',
     WITH_STIPEND: 'Со стипендией'
   }
+
   return map[type] || type
 }
 
@@ -385,10 +502,10 @@ async function bulkArchive() {
 
   try {
     for (const row of selected.value) {
-      await updateRequestStatus(row.id, 'ARCHIVED')
+      await updateRequestStatus(row.id, 'ARCHIVED', 'Заявка перемещена в архив.')
     }
 
-    await loadRequests()
+    await loadData()
     selected.value = []
 
     $q.notify({
@@ -398,6 +515,7 @@ async function bulkArchive() {
     })
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось архивировать выбранные заявки.',
@@ -411,10 +529,10 @@ async function bulkUnarchive() {
 
   try {
     for (const row of selected.value) {
-      await updateRequestStatus(row.id, 'ACCEPTED')
+      await updateRequestStatus(row.id, 'ACCEPTED', 'Заявка возвращена из архива.')
     }
 
-    await loadRequests()
+    await loadData()
     selected.value = []
 
     $q.notify({
@@ -424,6 +542,7 @@ async function bulkUnarchive() {
     })
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось вернуть заявки из архива.',
@@ -432,16 +551,65 @@ async function bulkUnarchive() {
   }
 }
 
-function generateCommonDocument() {
-  $q.notify({
-    type: 'info',
-    message: `Сформирован общий документ по ${selected.value.length} заявк(е/ам) — пока мок.`,
-    position: 'top'
-  })
+async function generateCommonDocument() {
+  if (!selected.value.length) {
+    $q.notify({
+      type: 'negative',
+      message: 'Выберите хотя бы одну заявку.',
+      position: 'top'
+    })
+    return
+  }
+
+  const hasNoStipendRequests = selected.value.some(
+    (request) => request.type === 'NO_STIPEND'
+  )
+
+  if (hasNoStipendRequests) {
+    $q.notify({
+      type: 'negative',
+      message: 'Общий документ можно сформировать только для справок с отметкой о стипендии.',
+      position: 'top'
+    })
+    return
+  }
+
+  try {
+    const requestIds = selected.value.map((request) => request.id)
+
+    const response = await generateCommonRequestDocument(requestIds)
+
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    })
+
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'Общий_документ.docx'
+    link.click()
+
+    URL.revokeObjectURL(url)
+
+    $q.notify({
+      type: 'positive',
+      message: 'Общий документ сформирован.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.message || 'Не удалось сформировать документ.',
+      position: 'top'
+    })
+  }
 }
 
 onMounted(() => {
-  loadRequests()
+  loadData()
 })
 </script>
 

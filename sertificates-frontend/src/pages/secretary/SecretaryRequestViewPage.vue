@@ -6,7 +6,7 @@
       <q-btn flat icon="arrow_back" class="campus-accent" label="Назад" @click="goBack" />
     </div>
 
-    <div v-if="loading" class="text-grey-7 q-mt-md">
+    <div v-if="loading && !request" class="text-grey-7 q-mt-md">
       Загрузка...
     </div>
 
@@ -33,7 +33,7 @@
 
               <div class="col-12 col-md-3">
                 <div class="field-label">Факультет</div>
-                <div class="field-value">{{ request.facultyName || request.facultyId || '—' }}</div>
+                <div class="field-value">{{ facultyLabel(request.facultyId) }}</div>
               </div>
 
               <div class="col-12">
@@ -236,7 +236,7 @@
       </div>
     </div>
 
-    <q-dialog v-model="statusDialog.open">
+    <q-dialog v-if="request" v-model="statusDialog.open">
       <q-card style="width: 560px; max-width: 95vw;" class="card">
         <q-card-section class="row items-center">
           <div class="text-h6">Подтверждение действия</div>
@@ -313,6 +313,8 @@ import {
   acceptRequest
 } from 'src/api/requests'
 import { getRequestHistory } from 'src/api/requestHistory'
+import { getFaculties } from 'src/api/faculties'
+import { getAccessAccounts } from 'src/api/accessAccounts'
 
 const $q = useQuasar()
 const route = useRoute()
@@ -329,20 +331,58 @@ const history = ref([])
 const statusHistory = ref([])
 const commentText = ref('')
 
+const faculties = ref([])
+const accessRows = ref([])
+
 const statusDialog = reactive({
   open: false,
   action: null,
   reason: ''
 })
 
+const currentAccess = computed(() => {
+  if (auth.role === 'ADMIN') {
+    return {
+      login: auth.login || 'admin',
+      role: 'ADMIN',
+      facultyIds: faculties.value.map(faculty => faculty.id),
+      active: true
+    }
+  }
+
+  if (auth.role !== 'SECRETARY') {
+    return null
+  }
+
+  const login = String(auth.login || '').toLowerCase()
+
+  return accessRows.value.find(row =>
+    String(row.login || '').toLowerCase() === login
+  ) || null
+})
+
+const availableFacultyIds = computed(() => {
+  if (!currentAccess.value) return []
+
+  if (currentAccess.value.role === 'ADMIN') {
+    return faculties.value.map(faculty => faculty.id)
+  }
+
+  if (currentAccess.value.active === false) {
+    return []
+  }
+
+  return currentAccess.value.facultyIds || []
+})
+
 const registrationLabel = computed(() => {
   if (!request.value?.registrationNumber) return ''
 
-  const facultyCode = request.value.facultyCode || `F${String(request.value.facultyId || 0).padStart(2, '0')}`
+  const facultyCodeValue = facultyCode(request.value.facultyId)
   const regNumber = String(request.value.registrationNumber).padStart(4, '0')
   const year = request.value.registrationYear || new Date().getFullYear()
 
-  return `${facultyCode}-${regNumber}/${year}`
+  return `${facultyCodeValue}-${regNumber}/${year}`
 })
 
 const canRollbackStatus = computed(() => {
@@ -366,6 +406,11 @@ const dialogMainText = computed(() => {
 
   return 'Вы уверены, что хотите изменить статус заявки?'
 })
+
+function canSeeFaculty(facultyId) {
+  if (auth.role === 'ADMIN') return true
+  return availableFacultyIds.value.includes(facultyId)
+}
 
 function statusLabel(s) {
   const map = {
@@ -397,6 +442,21 @@ function statusColor(s) {
   return map[s] || 'grey-7'
 }
 
+function facultyLabel(facultyId) {
+  const faculty = faculties.value.find(f => f.id === facultyId)
+
+  if (!faculty) return '—'
+
+  return faculty.code
+    ? `${faculty.code} — ${faculty.name}`
+    : faculty.name
+}
+
+function facultyCode(facultyId) {
+  const faculty = faculties.value.find(f => f.id === facultyId)
+  return faculty?.code || `F${String(facultyId).padStart(2, '0')}`
+}
+
 function formatDate(value) {
   if (!value) return null
   return new Date(value).toLocaleDateString('ru-RU')
@@ -417,8 +477,6 @@ function normalizeRequest(data) {
     fio: data.studentFullName || '—',
     courseGroup: courseGroup || '—',
     facultyId: data.facultyId,
-    facultyName: data.facultyName,
-    facultyCode: data.facultyCode,
     purpose: data.purpose || '—',
     qty: data.copiesCount || 1,
     type: data.certificateType,
@@ -430,7 +488,7 @@ function normalizeRequest(data) {
     registrationNumber: data.registrationNumber,
     registrationYear: data.registrationYear,
     registeredAt: data.registeredAt ? formatDateTime(data.registeredAt) : null,
-    registeredBy: 'sec_f01',
+    registeredBy: auth.login || '—',
     studentComment: data.studentComment || '',
     secretaryComment: data.secretaryComment || ''
   }
@@ -495,6 +553,15 @@ function goBack() {
 }
 
 function openStatusDialog(action) {
+  if (action !== 'ROLLBACK' && request.value?.status === action) {
+    $q.notify({
+      type: 'warning',
+      message: 'Заявка уже находится в этом статусе.',
+      position: 'top'
+    })
+    return
+  }
+
   statusDialog.action = action
   statusDialog.reason = ''
   statusDialog.open = true
@@ -505,17 +572,47 @@ async function loadRequestCard() {
   error.value = ''
 
   try {
-    const [{ data: requestData }, { data: historyData }] = await Promise.all([
+    const [
+      requestResponse,
+      historyResponse,
+      facultiesResponse,
+      accessAccountsResponse
+    ] = await Promise.all([
       getRequestById(requestId),
-      getRequestHistory()
+      getRequestHistory(),
+      getFaculties(),
+      getAccessAccounts()
     ])
 
-    const relatedHistory = historyData.filter(item => Number(item.requestId) === requestId)
+    faculties.value = facultiesResponse.data.map(faculty => ({
+      id: faculty.id,
+      code: faculty.code,
+      name: faculty.name,
+      active: faculty.isActive !== false
+    }))
 
-    request.value = normalizeRequest(requestData)
+    accessRows.value = accessAccountsResponse.data.map(account => ({
+      id: account.id,
+      login: account.login,
+      fio: account.fullName,
+      role: account.role,
+      facultyIds: account.facultyIds || [],
+      active: account.isActive !== false
+    }))
+
+    const normalized = normalizeRequest(requestResponse.data)
+
+    if (!canSeeFaculty(normalized.facultyId)) {
+      error.value = 'Нет доступа к заявке этого факультета'
+      return
+    }
+
+    const relatedHistory = historyResponse.data.filter(item => Number(item.requestId) === requestId)
+
+    request.value = normalized
     history.value = normalizeHistory(relatedHistory)
     statusHistory.value = buildStatusHistory(relatedHistory)
-    commentText.value = requestData.secretaryComment || ''
+    commentText.value = requestResponse.data.secretaryComment || ''
   } catch (err) {
     console.error(err)
     error.value = 'Не удалось загрузить карточку заявки'
@@ -552,8 +649,13 @@ async function confirmStatusAction() {
     return
   }
 
+  const action = statusDialog.action
+  const rejectReason = statusDialog.reason.trim()
+
+  statusDialog.open = false
+
   try {
-    if (statusDialog.action === 'ACCEPTED') {
+    if (action === 'ACCEPTED') {
       await acceptRequest(requestId)
       await loadRequestCard()
 
@@ -563,11 +665,10 @@ async function confirmStatusAction() {
         position: 'top'
       })
 
-      statusDialog.open = false
       return
     }
 
-    if (statusDialog.action === 'IN_WORK') {
+    if (action === 'IN_WORK') {
       await applyStatus(
         'IN_WORK',
         'Заявка переведена в обработку.',
@@ -575,7 +676,7 @@ async function confirmStatusAction() {
       )
     }
 
-    if (statusDialog.action === 'DELAYED') {
+    if (action === 'DELAYED') {
       await applyStatus(
         'DELAYED',
         'Для заявки отмечена задержка.',
@@ -583,7 +684,7 @@ async function confirmStatusAction() {
       )
     }
 
-    if (statusDialog.action === 'READY') {
+    if (action === 'READY') {
       await applyStatus(
         'READY',
         'Справка отмечена как готовая.',
@@ -591,8 +692,8 @@ async function confirmStatusAction() {
       )
     }
 
-    if (statusDialog.action === 'REJECTED') {
-      const reason = `Причина отклонения: ${statusDialog.reason.trim()}`
+    if (action === 'REJECTED') {
+      const reason = `Причина отклонения: ${rejectReason}`
 
       await updateRequestStatus(requestId, 'REJECTED', reason)
       await updateSecretaryComment(requestId, reason)
@@ -604,8 +705,6 @@ async function confirmStatusAction() {
         position: 'top'
       })
     }
-
-    statusDialog.open = false
   } catch (err) {
     console.error('STATUS ERROR', err)
     console.error('STATUS ERROR RESPONSE', err?.response?.data)
@@ -632,14 +731,14 @@ async function confirmRollbackStatus() {
 
   const previousStatus = statusHistory.value[statusHistory.value.length - 2]
 
+  statusDialog.open = false
+
   try {
     await applyStatus(
       previousStatus,
       `Статус возвращён: ${statusLabel(previousStatus)}.`,
       `Статус возвращён: ${statusLabel(previousStatus)}.`
     )
-
-    statusDialog.open = false
   } catch (err) {
     console.error(err)
 

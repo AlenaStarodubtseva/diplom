@@ -10,46 +10,70 @@ const routes = [
       },
 
       // СТУДЕНТ
-
       {
         path: 'student',
-        component: () => import('pages/student/StudentRequestsPage.vue')
+        component: () => import('pages/student/StudentRequestsPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['STUDENT']
+        }
       },
 
       {
         path: 'student/new',
-        component: () => import('pages/student/StudentRequestNewPage.vue')
+        component: () => import('pages/student/StudentRequestNewPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['STUDENT']
+        }
       },
 
       {
         path: 'student/:id',
-        component: () => import('pages/student/StudentRequestViewPage.vue')
+        component: () => import('pages/student/StudentRequestViewPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['STUDENT']
+        }
       },
 
       // СЕКРЕТАРЬ
-
       {
         path: 'secretary',
-        component: () => import('pages/secretary/SecretaryRequestsPage.vue')
+        component: () => import('pages/secretary/SecretaryRequestsPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['SECRETARY']
+        }
       },
 
       {
         path: 'secretary/:id',
-        component: () => import('pages/secretary/SecretaryRequestViewPage.vue')
+        component: () => import('pages/secretary/SecretaryRequestViewPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['SECRETARY', 'ADMIN']
+        }
       },
 
       // АДМИН
-
       {
         path: 'admin',
-        component: () => import('pages/admin/AdminPage.vue')
+        component: () => import('pages/admin/AdminPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['ADMIN']
+        }
       },
 
       // РУЧНОЕ СОЗДАНИЕ ЗАЯВКИ
-
       {
         path: 'manual-request',
-        component: () => import('pages/staff/ManualRequestPage.vue')
+        component: () => import('pages/staff/ManualRequestPage.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['ADMIN', 'SECRETARY']
+        }
       }
     ]
   },

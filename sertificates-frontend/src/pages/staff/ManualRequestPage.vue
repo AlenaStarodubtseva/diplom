@@ -36,8 +36,6 @@
           @submit="submitForm"
           class="form-grid"
         >
-          <!-- СТУДЕНТ -->
-
           <div class="section-title">
             Обучающийся
           </div>
@@ -104,8 +102,6 @@
           >
             Пока нет студентов, доступных для выбора. Студент появится в списке после первой созданной заявки.
           </q-banner>
-
-          <!-- СПРАВКА -->
 
           <div class="section-title q-mt-md">
             Параметры справки
@@ -233,13 +229,14 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
+import { useAuthStore } from 'stores/auth'
 import { createRequest, getRequests } from 'src/api/requests'
 import { getFaculties } from 'src/api/faculties'
+import { getAccessAccounts } from 'src/api/accessAccounts'
 
 const router = useRouter()
 const $q = useQuasar()
-
-const ACCESS_STORAGE_KEY = 'certificates-admin-access-list'
+const auth = useAuthStore()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -341,55 +338,46 @@ const availableToMonthOptions = computed(() => {
   return monthNames.filter(m => months.includes(m.value))
 })
 
-const currentUser = computed(() => {
-  try {
-    const savedUser =
-      localStorage.getItem('certificates-current-user') ||
-      localStorage.getItem('currentUser') ||
-      localStorage.getItem('user')
-
-    if (savedUser) {
-      return JSON.parse(savedUser)
-    }
-  } catch (err) {
-    console.error(err)
-  }
-
-  return {
-    login: 'admin',
-    role: 'ADMIN'
-  }
-})
-
 const currentAccess = computed(() => {
-  if (currentUser.value.role === 'ADMIN') {
+  if (auth.role === 'ADMIN') {
     return {
-      login: currentUser.value.login || 'admin',
+      login: auth.login || 'admin',
       role: 'ADMIN',
-      facultyCodes: [],
+      facultyIds: [],
       active: true
     }
   }
 
-  const login = currentUser.value.login
-
-  return accessRows.value.find(row => row.login === login) || null
-})
-
-const availableFacultyCodes = computed(() => {
-  if (!currentAccess.value) return []
-
-  if (currentAccess.value.role === 'ADMIN') {
-    return faculties.value.map(f => f.code)
+  if (auth.role !== 'SECRETARY') {
+    return null
   }
 
-  return currentAccess.value.facultyCodes || []
+  const login = auth.login || ''
+
+  const account = accessRows.value.find(row =>
+    row.login?.toLowerCase() === login.toLowerCase()
+  )
+
+  if (account) {
+    return account
+  }
+
+  return {
+    login,
+    role: 'SECRETARY',
+    facultyIds: fallbackFacultyIdsFromAuth(),
+    active: true
+  }
 })
 
 const availableFacultyIds = computed(() => {
-  return faculties.value
-    .filter(f => availableFacultyCodes.value.includes(f.code))
-    .map(f => f.id)
+  if (!currentAccess.value) return []
+
+  if (currentAccess.value.role === 'ADMIN') {
+    return faculties.value.map(faculty => faculty.id)
+  }
+
+  return currentAccess.value.facultyIds || []
 })
 
 const students = computed(() => {
@@ -511,8 +499,8 @@ function validatePeriodOrder() {
   const from = new Date(periodFromYear.value, periodFromMonth.value - 1, 1)
   const to = new Date(periodToYear.value, periodToMonth.value - 1, 1)
 
-  if (from >= to) {
-    return 'Период "с" должен быть раньше периода "по"'
+  if (from > to) {
+    return 'Период "с" не должен быть позже периода "по"'
   }
 
   return true
@@ -528,8 +516,22 @@ function facultyLabel(facultyId) {
     : faculty.name
 }
 
+function fallbackFacultyIdsFromAuth() {
+  if (!auth.facultyId) return []
+
+  const authFaculty = String(auth.facultyId).trim().toLowerCase()
+
+  const faculty = faculties.value.find(faculty =>
+    String(faculty.id) === authFaculty ||
+    String(faculty.code || '').toLowerCase() === authFaculty ||
+    `f${String(faculty.id).padStart(2, '0')}`.toLowerCase() === authFaculty
+  )
+
+  return faculty ? [faculty.id] : []
+}
+
 function goBack() {
-  if (currentUser.value.role === 'SECRETARY') {
+  if (auth.role === 'SECRETARY') {
     router.push('/secretary')
     return
   }
@@ -537,33 +539,31 @@ function goBack() {
   router.push('/admin')
 }
 
-function loadAccessRows() {
-  try {
-    const saved = localStorage.getItem(ACCESS_STORAGE_KEY)
-
-    if (saved) {
-      accessRows.value = JSON.parse(saved)
-      return
-    }
-  } catch (err) {
-    console.error(err)
-  }
-
-  accessRows.value = []
-}
-
 async function loadData() {
   loading.value = true
 
   try {
-    const [facultiesResponse, requestsResponse] = await Promise.all([
+    const [
+      facultiesResponse,
+      requestsResponse,
+      accessAccountsResponse
+    ] = await Promise.all([
       getFaculties(),
-      getRequests()
+      getRequests(),
+      getAccessAccounts()
     ])
 
     faculties.value = facultiesResponse.data.filter(item => item.isActive !== false)
     requests.value = requestsResponse.data
-    loadAccessRows()
+
+    accessRows.value = accessAccountsResponse.data.map(row => ({
+      id: row.id,
+      login: row.login,
+      fio: row.fullName,
+      role: row.role,
+      facultyIds: row.facultyIds || [],
+      active: row.isActive !== false
+    }))
   } catch (err) {
     console.error(err)
 
@@ -581,6 +581,15 @@ async function submitForm() {
     $q.notify({
       type: 'negative',
       message: 'Выберите студента'
+    })
+
+    return
+  }
+
+  if (auth.role === 'SECRETARY' && !availableFacultyIds.value.includes(selectedStudentData.value.facultyId)) {
+    $q.notify({
+      type: 'negative',
+      message: 'У вас нет доступа к факультету выбранного студента'
     })
 
     return

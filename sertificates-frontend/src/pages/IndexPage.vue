@@ -6,7 +6,7 @@
           Вход в модуль «Справки»
         </div>
         <div class="text-caption text-grey-7">
-          Макет SSO (Кампус БГПУ позже подставит реальные данные)
+          Макет SSO: Кампус БГПУ позже будет передавать логин и роль пользователя
         </div>
       </q-card-section>
 
@@ -16,28 +16,21 @@
         <q-btn
           color="primary"
           class="full-width"
-          label="Войти как АДМИН"
+          label="Войти как admin"
           @click="loginAdmin"
         />
 
         <q-btn
           color="secondary"
           class="full-width"
-          label="Войти как СЕКРЕТАРЬ (F01)"
-          @click="loginSecretary('F01')"
-        />
-
-        <q-btn
-          color="secondary"
-          class="full-width"
-          label="Войти как СЕКРЕТАРЬ (F02)"
-          @click="loginSecretary('F02')"
+          label="Войти как secretary_f01"
+          @click="loginSecretary"
         />
 
         <q-btn
           outline
           class="full-width"
-          label="Войти как СТУДЕНТ (2014, F01)"
+          label="Войти как student_2014"
           @click="loginStudent"
         />
       </q-card-section>
@@ -71,18 +64,32 @@ const stateDump = computed(() => ({
 }))
 
 function loginAdmin () {
-  auth.mockLoginAsAdmin()
+  auth.loginAs({
+    login: 'admin',
+    role: 'ADMIN',
+    facultyId: null
+  })
+
   router.push('/admin')
 }
 
-function loginSecretary (facultyId) {
-  auth.mockLoginAsSecretary(facultyId)
+function loginSecretary () {
+  auth.loginAs({
+    login: 'secretary_f01',
+    role: 'SECRETARY',
+    facultyId: null
+  })
+
   router.push('/secretary')
 }
 
 function loginStudent () {
-  auth.mockLoginAsStudent('2014', 'F01')
+  auth.loginAs({
+    login: 'student_2014',
+    role: 'STUDENT',
+    facultyId: 'F01'
+  })
+
   router.push('/student')
 }
 </script>
-

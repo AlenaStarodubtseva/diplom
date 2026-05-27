@@ -2,9 +2,12 @@ package ru.bgpu.certificates.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import ru.bgpu.certificates.entity.AccessAccount;
 import ru.bgpu.certificates.entity.Faculty;
 import ru.bgpu.certificates.entity.Request;
 import ru.bgpu.certificates.entity.RequestHistory;
+import ru.bgpu.certificates.repository.AccessAccountFacultyRepository;
+import ru.bgpu.certificates.repository.AccessAccountRepository;
 import ru.bgpu.certificates.repository.FacultyRepository;
 import ru.bgpu.certificates.repository.RequestHistoryRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
@@ -21,9 +24,44 @@ public class RequestController {
     private final RequestRepository requestRepository;
     private final RequestHistoryRepository requestHistoryRepository;
     private final FacultyRepository facultyRepository;
+    private final AccessAccountRepository accessAccountRepository;
+    private final AccessAccountFacultyRepository accessAccountFacultyRepository;
 
     @GetMapping
-    public List<Request> getAll() {
+    public List<Request> getAll(
+            @RequestParam(required = false) String actorLogin,
+            @RequestParam(required = false) String actorRole
+    ) {
+        if ("ADMIN".equals(actorRole)) {
+            return requestRepository.findAll();
+        }
+
+        if ("SECRETARY".equals(actorRole)) {
+            if (actorLogin == null || actorLogin.isBlank()) {
+                return List.of();
+            }
+
+            AccessAccount account = accessAccountRepository
+                    .findByLoginIgnoreCase(actorLogin)
+                    .orElse(null);
+
+            if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
+                return List.of();
+            }
+
+            List<Long> facultyIds = accessAccountFacultyRepository
+                    .findByAccessAccountId(account.getId())
+                    .stream()
+                    .map(link -> link.getFaculty().getId())
+                    .toList();
+
+            if (facultyIds.isEmpty()) {
+                return List.of();
+            }
+
+            return requestRepository.findByFacultyIdIn(facultyIds);
+        }
+
         return requestRepository.findAll();
     }
 
@@ -107,7 +145,10 @@ public class RequestController {
     }
 
     @PatchMapping("/{id}/accept")
-    public Request acceptRequest(@PathVariable Long id) {
+    public Request acceptRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) ActorRequest actor
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -123,6 +164,7 @@ public class RequestController {
                 .orElseThrow(() -> new RuntimeException("Факультет не найден"));
 
         Integer nextNumber = faculty.getNextRegistrationNumber();
+
         if (nextNumber == null || nextNumber < 1) {
             nextNumber = 1;
         }
@@ -149,9 +191,9 @@ public class RequestController {
                         .oldStatus(oldStatus)
                         .newStatus("ACCEPTED")
                         .comment("Заявка принята и зарегистрирована")
-                        .actorLogin("sec_f01")
-                        .actorFullName("Секретарь")
-                        .actorRole("SECRETARY")
+                        .actorLogin(actorLogin(actor, "secretary"))
+                        .actorFullName(actorFullName(actor, "Секретарь"))
+                        .actorRole(actorRole(actor, "SECRETARY"))
                         .createdAt(LocalDateTime.now())
                         .build()
         );
@@ -160,7 +202,10 @@ public class RequestController {
     }
 
     @PatchMapping("/{id}/student-comment")
-    public Request updateStudentComment(@PathVariable Long id, @RequestBody CommentRequest payload) {
+    public Request updateStudentComment(
+            @PathVariable Long id,
+            @RequestBody CommentRequest payload
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -175,10 +220,10 @@ public class RequestController {
                         .actionType("STUDENT_COMMENT")
                         .oldStatus(saved.getStatus())
                         .newStatus(saved.getStatus())
-                        .comment("Комментарий студента: " + payload.getComment())
-                        .actorLogin("student")
-                        .actorFullName(saved.getStudentFullName())
-                        .actorRole("STUDENT")
+                        .comment("Комментарий студента: " + safeComment(payload.getComment()))
+                        .actorLogin(actorLogin(payload, "student"))
+                        .actorFullName(actorFullName(payload, saved.getStudentFullName()))
+                        .actorRole(actorRole(payload, "STUDENT"))
                         .createdAt(LocalDateTime.now())
                         .build()
         );
@@ -187,7 +232,10 @@ public class RequestController {
     }
 
     @PatchMapping("/{id}/secretary-comment")
-    public Request updateSecretaryComment(@PathVariable Long id, @RequestBody CommentRequest payload) {
+    public Request updateSecretaryComment(
+            @PathVariable Long id,
+            @RequestBody CommentRequest payload
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -202,10 +250,10 @@ public class RequestController {
                         .actionType("SECRETARY_COMMENT")
                         .oldStatus(saved.getStatus())
                         .newStatus(saved.getStatus())
-                        .comment("Комментарий секретаря: " + payload.getComment())
-                        .actorLogin("sec_f01")
-                        .actorFullName("Секретарь")
-                        .actorRole("SECRETARY")
+                        .comment("Комментарий секретаря: " + safeComment(payload.getComment()))
+                        .actorLogin(actorLogin(payload, "secretary"))
+                        .actorFullName(actorFullName(payload, "Секретарь"))
+                        .actorRole(actorRole(payload, "SECRETARY"))
                         .createdAt(LocalDateTime.now())
                         .build()
         );
@@ -214,7 +262,10 @@ public class RequestController {
     }
 
     @PatchMapping("/{id}/status")
-    public Request updateStatus(@PathVariable Long id, @RequestBody StatusRequest payload) {
+    public Request updateStatus(
+            @PathVariable Long id,
+            @RequestBody StatusRequest payload
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -233,16 +284,22 @@ public class RequestController {
 
         Request saved = requestRepository.save(existing);
 
+        String historyComment = payload.getComment();
+
+        if (historyComment == null || historyComment.isBlank()) {
+            historyComment = "Статус изменён";
+        }
+
         requestHistoryRepository.save(
                 RequestHistory.builder()
                         .requestId(saved.getId())
                         .actionType("STATUS_CHANGE")
                         .oldStatus(oldStatus)
                         .newStatus(saved.getStatus())
-                        .comment("Статус изменён")
-                        .actorLogin("sec_f01")
-                        .actorFullName("Секретарь")
-                        .actorRole("SECRETARY")
+                        .comment(historyComment)
+                        .actorLogin(actorLogin(payload, "secretary"))
+                        .actorFullName(actorFullName(payload, "Секретарь"))
+                        .actorRole(actorRole(payload, "SECRETARY"))
                         .createdAt(LocalDateTime.now())
                         .build()
         );
@@ -251,11 +308,15 @@ public class RequestController {
     }
 
     @PatchMapping("/{id}/cancel")
-    public Request cancelRequest(@PathVariable Long id) {
+    public Request cancelRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) ActorRequest actor
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
         String oldStatus = existing.getStatus();
+
         existing.setStatus("CANCELLED");
         existing.setUpdatedAt(LocalDateTime.now());
         existing.setArchivedAt(LocalDateTime.now());
@@ -269,9 +330,9 @@ public class RequestController {
                         .oldStatus(oldStatus)
                         .newStatus("CANCELLED")
                         .comment("Заявка отменена студентом")
-                        .actorLogin("student")
-                        .actorFullName(saved.getStudentFullName())
-                        .actorRole("STUDENT")
+                        .actorLogin(actorLogin(actor, "student"))
+                        .actorFullName(actorFullName(actor, saved.getStudentFullName()))
+                        .actorRole(actorRole(actor, "STUDENT"))
                         .createdAt(LocalDateTime.now())
                         .build()
         );
@@ -284,7 +345,65 @@ public class RequestController {
         requestRepository.deleteById(id);
     }
 
-    public static class CommentRequest {
+    private String actorLogin(ActorRequest actor, String fallback) {
+        if (actor == null || actor.getActorLogin() == null || actor.getActorLogin().isBlank()) {
+            return fallback;
+        }
+
+        return actor.getActorLogin();
+    }
+
+    private String actorFullName(ActorRequest actor, String fallback) {
+        if (actor == null || actor.getActorFullName() == null || actor.getActorFullName().isBlank()) {
+            return fallback;
+        }
+
+        return actor.getActorFullName();
+    }
+
+    private String actorRole(ActorRequest actor, String fallback) {
+        if (actor == null || actor.getActorRole() == null || actor.getActorRole().isBlank()) {
+            return fallback;
+        }
+
+        return actor.getActorRole();
+    }
+
+    private String safeComment(String comment) {
+        return comment == null || comment.isBlank() ? "—" : comment;
+    }
+
+    public static class ActorRequest {
+        private String actorLogin;
+        private String actorFullName;
+        private String actorRole;
+
+        public String getActorLogin() {
+            return actorLogin;
+        }
+
+        public void setActorLogin(String actorLogin) {
+            this.actorLogin = actorLogin;
+        }
+
+        public String getActorFullName() {
+            return actorFullName;
+        }
+
+        public void setActorFullName(String actorFullName) {
+            this.actorFullName = actorFullName;
+        }
+
+        public String getActorRole() {
+            return actorRole;
+        }
+
+        public void setActorRole(String actorRole) {
+            this.actorRole = actorRole;
+        }
+    }
+
+    public static class CommentRequest extends ActorRequest {
         private String comment;
 
         public String getComment() {
@@ -296,8 +415,9 @@ public class RequestController {
         }
     }
 
-    public static class StatusRequest {
+    public static class StatusRequest extends ActorRequest {
         private String status;
+        private String comment;
 
         public String getStatus() {
             return status;
@@ -305,6 +425,14 @@ public class RequestController {
 
         public void setStatus(String status) {
             this.status = status;
+        }
+
+        public String getComment() {
+            return comment;
+        }
+
+        public void setComment(String comment) {
+            this.comment = comment;
         }
     }
 }
