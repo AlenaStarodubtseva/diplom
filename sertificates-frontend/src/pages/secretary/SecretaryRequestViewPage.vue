@@ -495,17 +495,32 @@ function normalizeRequest(data) {
 }
 
 function buildStatusHistory(items) {
-  const statuses = []
+  const stack = []
 
   items
     .filter(item => ['CREATE', 'STATUS_CHANGE', 'REGISTER', 'CANCEL'].includes(item.actionType))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .forEach(item => {
       const status = item.newStatus || (item.actionType === 'CREATE' ? 'NEW' : null)
-      if (status) statuses.push(status)
+
+      if (!status) return
+
+      const isRollback = item.comment?.startsWith('Статус возвращён:')
+
+      if (isRollback) {
+        if (stack.length > 1) {
+          stack.pop()
+        }
+
+        return
+      }
+
+      if (!stack.length || stack[stack.length - 1] !== status) {
+        stack.push(status)
+      }
     })
 
-  return statuses.length ? statuses : ['NEW']
+  return stack.length ? stack : ['NEW']
 }
 
 function normalizeHistory(items) {

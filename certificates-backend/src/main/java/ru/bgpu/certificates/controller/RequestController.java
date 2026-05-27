@@ -37,23 +37,7 @@ public class RequestController {
         }
 
         if ("SECRETARY".equals(actorRole)) {
-            if (actorLogin == null || actorLogin.isBlank()) {
-                return List.of();
-            }
-
-            AccessAccount account = accessAccountRepository
-                    .findByLoginIgnoreCase(actorLogin)
-                    .orElse(null);
-
-            if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
-                return List.of();
-            }
-
-            List<Long> facultyIds = accessAccountFacultyRepository
-                    .findByAccessAccountId(account.getId())
-                    .stream()
-                    .map(link -> link.getFaculty().getId())
-                    .toList();
+            List<Long> facultyIds = availableFacultyIds(actorLogin, actorRole);
 
             if (facultyIds.isEmpty()) {
                 return List.of();
@@ -66,9 +50,17 @@ public class RequestController {
     }
 
     @GetMapping("/{id}")
-    public Request getById(@PathVariable Long id) {
-        return requestRepository.findById(id)
+    public Request getById(
+            @PathVariable Long id,
+            @RequestParam(required = false) String actorLogin,
+            @RequestParam(required = false) String actorRole
+    ) {
+        Request request = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(request, actorLogin, actorRole);
+
+        return request;
     }
 
     @PostMapping
@@ -113,7 +105,10 @@ public class RequestController {
     }
 
     @PutMapping("/{id}")
-    public Request update(@PathVariable Long id, @RequestBody Request updatedRequest) {
+    public Request update(
+            @PathVariable Long id,
+            @RequestBody Request updatedRequest
+    ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -151,6 +146,8 @@ public class RequestController {
     ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(existing, actorLogin(actor, null), actorRole(actor, null));
 
         if (!"NEW".equals(existing.getStatus())) {
             throw new RuntimeException("Принять можно только новую заявку");
@@ -239,6 +236,8 @@ public class RequestController {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
+        checkAccess(existing, actorLogin(payload, null), actorRole(payload, null));
+
         existing.setSecretaryComment(payload.getComment());
         existing.setUpdatedAt(LocalDateTime.now());
 
@@ -268,6 +267,8 @@ public class RequestController {
     ) {
         Request existing = requestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(existing, actorLogin(payload, null), actorRole(payload, null));
 
         String oldStatus = existing.getStatus();
 
@@ -343,6 +344,50 @@ public class RequestController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         requestRepository.deleteById(id);
+    }
+
+    private void checkAccess(Request request, String actorLogin, String actorRole) {
+        if ("ADMIN".equals(actorRole)) {
+            return;
+        }
+
+        if (!"SECRETARY".equals(actorRole)) {
+            return;
+        }
+
+        if (request.getFacultyId() == null) {
+            throw new RuntimeException("У заявки не указан факультет");
+        }
+
+        List<Long> facultyIds = availableFacultyIds(actorLogin, actorRole);
+
+        if (!facultyIds.contains(request.getFacultyId())) {
+            throw new RuntimeException("Нет доступа к заявке этого факультета");
+        }
+    }
+
+    private List<Long> availableFacultyIds(String actorLogin, String actorRole) {
+        if (!"SECRETARY".equals(actorRole)) {
+            return List.of();
+        }
+
+        if (actorLogin == null || actorLogin.isBlank()) {
+            return List.of();
+        }
+
+        AccessAccount account = accessAccountRepository
+                .findByLoginIgnoreCase(actorLogin)
+                .orElse(null);
+
+        if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
+            return List.of();
+        }
+
+        return accessAccountFacultyRepository
+                .findByAccessAccountId(account.getId())
+                .stream()
+                .map(link -> link.getFaculty().getId())
+                .toList();
     }
 
     private String actorLogin(ActorRequest actor, String fallback) {

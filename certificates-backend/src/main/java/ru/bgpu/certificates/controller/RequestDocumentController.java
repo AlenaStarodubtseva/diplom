@@ -6,10 +6,16 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.bgpu.certificates.dto.GenerateDocumentRequest;
+import ru.bgpu.certificates.entity.AccessAccount;
+import ru.bgpu.certificates.entity.Request;
+import ru.bgpu.certificates.repository.AccessAccountFacultyRepository;
+import ru.bgpu.certificates.repository.AccessAccountRepository;
+import ru.bgpu.certificates.repository.RequestRepository;
 import ru.bgpu.certificates.service.RequestDocumentService;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/request-documents")
@@ -18,11 +24,16 @@ import java.nio.charset.StandardCharsets;
 public class RequestDocumentController {
 
     private final RequestDocumentService requestDocumentService;
+    private final RequestRepository requestRepository;
+    private final AccessAccountRepository accessAccountRepository;
+    private final AccessAccountFacultyRepository accessAccountFacultyRepository;
 
     @PostMapping("/common")
     public ResponseEntity<byte[]> generateCommonDocument(
             @RequestBody GenerateDocumentRequest request
     ) {
+        checkAccess(request);
+
         byte[] file = requestDocumentService.generateCommonDocument(request.getRequestIds());
 
         String filename = URLEncoder.encode(
@@ -39,5 +50,50 @@ public class RequestDocumentController {
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 ))
                 .body(file);
+    }
+
+    private void checkAccess(GenerateDocumentRequest request) {
+        if ("ADMIN".equals(request.getActorRole())) {
+            return;
+        }
+
+        if (!"SECRETARY".equals(request.getActorRole())) {
+            return;
+        }
+
+        List<Long> availableFacultyIds = availableFacultyIds(request.getActorLogin());
+
+        if (availableFacultyIds.isEmpty()) {
+            throw new RuntimeException("Нет доступных факультетов для формирования документа");
+        }
+
+        List<Request> selectedRequests = requestRepository.findAllById(request.getRequestIds());
+
+        boolean hasForbiddenRequest = selectedRequests.stream()
+                .anyMatch(item -> item.getFacultyId() == null || !availableFacultyIds.contains(item.getFacultyId()));
+
+        if (hasForbiddenRequest) {
+            throw new RuntimeException("Нельзя сформировать документ по заявкам чужого факультета");
+        }
+    }
+
+    private List<Long> availableFacultyIds(String actorLogin) {
+        if (actorLogin == null || actorLogin.isBlank()) {
+            return List.of();
+        }
+
+        AccessAccount account = accessAccountRepository
+                .findByLoginIgnoreCase(actorLogin)
+                .orElse(null);
+
+        if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
+            return List.of();
+        }
+
+        return accessAccountFacultyRepository
+                .findByAccessAccountId(account.getId())
+                .stream()
+                .map(link -> link.getFaculty().getId())
+                .toList();
     }
 }

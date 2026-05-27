@@ -40,7 +40,14 @@ export function getRequests() {
 }
 
 export function getRequestById(id) {
-  return api.get(`/requests/${id}`)
+  const auth = getAuthPayload()
+
+  return api.get(`/requests/${id}`, {
+    params: {
+      actorLogin: auth.actorLogin,
+      actorRole: auth.actorRole
+    }
+  })
 }
 
 export function createRequest(payload) {
@@ -48,7 +55,10 @@ export function createRequest(payload) {
 }
 
 export function updateRequest(id, payload) {
-  return api.put(`/requests/${id}`, payload)
+  return api.put(`/requests/${id}`, {
+    ...payload,
+    ...getAuthPayload()
+  })
 }
 
 export function deleteRequest(id) {

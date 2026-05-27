@@ -16,4 +16,8 @@ import java.util.List;
 public class GenerateDocumentRequest {
 
     private List<Long> requestIds;
+
+    private String actorLogin;
+
+    private String actorRole;
 }
