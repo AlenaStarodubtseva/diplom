@@ -1,7 +1,11 @@
 package ru.bgpu.certificates.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import ru.bgpu.certificates.entity.AccessAccount;
 import ru.bgpu.certificates.entity.Faculty;
 import ru.bgpu.certificates.entity.Request;
@@ -14,8 +18,14 @@ import ru.bgpu.certificates.repository.RequestHistoryRepository;
 import ru.bgpu.certificates.repository.RequestRegistrationNumberRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
 
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/requests")
@@ -29,6 +39,8 @@ public class RequestController {
     private final AccessAccountRepository accessAccountRepository;
     private final AccessAccountFacultyRepository accessAccountFacultyRepository;
     private final RequestRegistrationNumberRepository requestRegistrationNumberRepository;
+
+    private final Path scanStoragePath = Paths.get("uploads", "scans").toAbsolutePath().normalize();
 
     @GetMapping
     public List<Request> getAll(
@@ -223,6 +235,147 @@ public class RequestController {
         return saved;
     }
 
+    @PostMapping("/{id}/scan")
+    public Request uploadScan(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String actorLogin,
+            @RequestParam(required = false) String actorFullName,
+            @RequestParam(required = false) String actorRole
+    ) throws IOException {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(existing, actorLogin, actorRole);
+
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Файл не выбран");
+        }
+
+        String originalFileName = file.getOriginalFilename() == null
+                ? "scan"
+                : Paths.get(file.getOriginalFilename()).getFileName().toString();
+
+        String contentType = file.getContentType() == null
+                ? "application/octet-stream"
+                : file.getContentType();
+
+        validateScanFile(originalFileName, contentType);
+
+        Files.createDirectories(scanStoragePath);
+
+        deleteScanFileIfExists(existing);
+
+        String extension = fileExtension(originalFileName, contentType);
+        String storedFileName = "request_" + id + "_" + UUID.randomUUID() + extension;
+        Path targetPath = scanStoragePath.resolve(storedFileName).normalize();
+
+        Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+        existing.setScanFileName(storedFileName);
+        existing.setScanOriginalFileName(originalFileName);
+        existing.setScanContentType(contentType);
+        existing.setScanUploadedAt(LocalDateTime.now());
+        existing.setScanUploadedBy(actorLogin == null || actorLogin.isBlank() ? "secretary" : actorLogin);
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("SCAN_UPLOAD")
+                        .oldStatus(saved.getStatus())
+                        .newStatus(saved.getStatus())
+                        .comment("Прикреплён скан справки: " + originalFileName)
+                        .actorLogin(actorLogin == null || actorLogin.isBlank() ? "secretary" : actorLogin)
+                        .actorFullName(actorFullName == null || actorFullName.isBlank() ? "Секретарь" : actorFullName)
+                        .actorRole(actorRole == null || actorRole.isBlank() ? "SECRETARY" : actorRole)
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
+    }
+
+    @GetMapping("/{id}/scan")
+    public ResponseEntity<byte[]> downloadScan(
+            @PathVariable Long id,
+            @RequestParam(required = false) String actorLogin,
+            @RequestParam(required = false) String actorRole
+    ) throws IOException {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(existing, actorLogin, actorRole);
+
+        if (existing.getScanFileName() == null || existing.getScanFileName().isBlank()) {
+            throw new RuntimeException("Скан справки не прикреплён");
+        }
+
+        Path filePath = scanStoragePath.resolve(existing.getScanFileName()).normalize();
+
+        if (!Files.exists(filePath)) {
+            throw new RuntimeException("Файл скана не найден на сервере");
+        }
+
+        byte[] fileBytes = Files.readAllBytes(filePath);
+
+        String filename = URLEncoder.encode(
+                existing.getScanOriginalFileName() == null ? "scan" : existing.getScanOriginalFileName(),
+                StandardCharsets.UTF_8
+        ).replace("+", "%20");
+
+        String contentType = existing.getScanContentType() == null
+                ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+                : existing.getScanContentType();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + filename)
+                .contentType(MediaType.parseMediaType(contentType))
+                .body(fileBytes);
+    }
+
+    @DeleteMapping("/{id}/scan")
+    public Request deleteScan(
+            @PathVariable Long id,
+            @RequestBody(required = false) ActorRequest actor
+    ) throws IOException {
+        Request existing = requestRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        checkAccess(existing, actorLogin(actor, null), actorRole(actor, null));
+
+        String oldFileName = existing.getScanOriginalFileName();
+
+        deleteScanFileIfExists(existing);
+
+        existing.setScanFileName(null);
+        existing.setScanOriginalFileName(null);
+        existing.setScanContentType(null);
+        existing.setScanUploadedAt(null);
+        existing.setScanUploadedBy(null);
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        Request saved = requestRepository.save(existing);
+
+        requestHistoryRepository.save(
+                RequestHistory.builder()
+                        .requestId(saved.getId())
+                        .actionType("SCAN_DELETE")
+                        .oldStatus(saved.getStatus())
+                        .newStatus(saved.getStatus())
+                        .comment("Удалён скан справки" + (oldFileName == null ? "" : ": " + oldFileName))
+                        .actorLogin(actorLogin(actor, "secretary"))
+                        .actorFullName(actorFullName(actor, "Секретарь"))
+                        .actorRole(actorRole(actor, "SECRETARY"))
+                        .createdAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
+    }
+
     @PatchMapping("/{id}/student-comment")
     public Request updateStudentComment(
             @PathVariable Long id,
@@ -367,9 +520,59 @@ public class RequestController {
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable Long id) throws IOException {
+        Request existing = requestRepository.findById(id).orElse(null);
+
+        if (existing != null) {
+            deleteScanFileIfExists(existing);
+        }
+
         requestRegistrationNumberRepository.deleteByRequestId(id);
         requestRepository.deleteById(id);
+    }
+
+    private void validateScanFile(String originalFileName, String contentType) {
+        String lowerName = originalFileName.toLowerCase(Locale.ROOT);
+        String lowerType = contentType.toLowerCase(Locale.ROOT);
+
+        boolean allowed = lowerType.equals("application/pdf")
+                || lowerType.equals("image/jpeg")
+                || lowerType.equals("image/png")
+                || lowerName.endsWith(".pdf")
+                || lowerName.endsWith(".jpg")
+                || lowerName.endsWith(".jpeg")
+                || lowerName.endsWith(".png");
+
+        if (!allowed) {
+            throw new RuntimeException("Можно прикрепить только PDF, JPG или PNG");
+        }
+    }
+
+    private String fileExtension(String originalFileName, String contentType) {
+        String lowerName = originalFileName.toLowerCase(Locale.ROOT);
+
+        if (lowerName.endsWith(".pdf")) return ".pdf";
+        if (lowerName.endsWith(".jpg")) return ".jpg";
+        if (lowerName.endsWith(".jpeg")) return ".jpeg";
+        if (lowerName.endsWith(".png")) return ".png";
+
+        if ("application/pdf".equalsIgnoreCase(contentType)) return ".pdf";
+        if ("image/jpeg".equalsIgnoreCase(contentType)) return ".jpg";
+        if ("image/png".equalsIgnoreCase(contentType)) return ".png";
+
+        return "";
+    }
+
+    private void deleteScanFileIfExists(Request request) throws IOException {
+        if (request.getScanFileName() == null || request.getScanFileName().isBlank()) {
+            return;
+        }
+
+        Path filePath = scanStoragePath.resolve(request.getScanFileName()).normalize();
+
+        if (Files.exists(filePath)) {
+            Files.delete(filePath);
+        }
     }
 
     private void checkAccess(Request request, String actorLogin, String actorRole) {

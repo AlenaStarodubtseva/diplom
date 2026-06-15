@@ -70,6 +70,21 @@ public class Request {
     @Column(name = "issued_at")
     private LocalDateTime issuedAt;
 
+    @Column(name = "scan_file_name")
+    private String scanFileName;
+
+    @Column(name = "scan_original_file_name")
+    private String scanOriginalFileName;
+
+    @Column(name = "scan_content_type")
+    private String scanContentType;
+
+    @Column(name = "scan_uploaded_at")
+    private LocalDateTime scanUploadedAt;
+
+    @Column(name = "scan_uploaded_by")
+    private String scanUploadedBy;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

@@ -98,3 +98,39 @@ export function cancelRequest(id) {
     ...getAuthPayload()
   })
 }
+
+export function uploadRequestScan(id, file) {
+  const formData = new FormData()
+  const auth = getAuthPayload()
+
+  formData.append('file', file)
+  formData.append('actorLogin', auth.actorLogin || '')
+  formData.append('actorFullName', auth.actorFullName || '')
+  formData.append('actorRole', auth.actorRole || '')
+
+  return api.post(`/requests/${id}/scan`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+export function downloadRequestScan(id) {
+  const auth = getAuthPayload()
+
+  return api.get(`/requests/${id}/scan`, {
+    params: {
+      actorLogin: auth.actorLogin,
+      actorRole: auth.actorRole
+    },
+    responseType: 'blob'
+  })
+}
+
+export function deleteRequestScan(id) {
+  return api.delete(`/requests/${id}/scan`, {
+    data: {
+      ...getAuthPayload()
+    }
+  })
+}

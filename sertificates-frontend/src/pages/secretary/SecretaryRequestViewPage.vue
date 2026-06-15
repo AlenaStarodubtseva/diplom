@@ -115,8 +115,6 @@
                   :key="number.id"
                   dense
                   outline
-                  color="primary"
-                  text-color="primary"
                   class="registration-chip"
                 >
                   {{ formatRegistrationNumber(number) }}
@@ -140,6 +138,114 @@
             <div>
               <div class="field-label">Зарегистрировал</div>
               <div class="field-value">{{ request.registeredBy || '—' }}</div>
+            </div>
+          </q-card-section>
+        </q-card>
+
+        <q-card class="card q-mb-md">
+          <q-card-section>
+            <div class="text-subtitle1 q-mb-md">Скан готовой справки</div>
+
+            <q-banner
+              v-if="request.needScan"
+              rounded
+              dense
+              class="bg-blue-1 text-black q-mb-md"
+            >
+              Студент указал, что ему нужен скан справки.
+            </q-banner>
+
+            <div v-if="request.scanOriginalFileName" class="scan-info q-mb-md">
+              <div class="row items-center no-wrap">
+                <q-icon name="attach_file" size="22px" class="campus-accent q-mr-sm" />
+                <div class="col">
+                  <div class="field-value">{{ request.scanOriginalFileName }}</div>
+                  <div class="field-label">
+                    Загружено: {{ request.scanUploadedAt || '—' }}
+                  </div>
+                  <div class="field-label">
+                    Загрузил: {{ request.scanUploadedBy || '—' }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="row q-gutter-sm q-mt-md">
+                <q-btn
+                  outline
+                  class="campus-accent"
+                  icon="visibility"
+                  label="Открыть"
+                  @click="openScan"
+                />
+
+                <q-btn
+                  outline
+                  color="negative"
+                  icon="delete"
+                  label="Удалить"
+                  @click="removeScan"
+                />
+              </div>
+            </div>
+
+            <q-file
+              v-model="scanFile"
+              outlined
+              clearable
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              label="Перетащи файл сюда или выбери вручную"
+              hint="Файл пока не загружен на сервер. После выбора нажми «Сохранить скан»."
+              counter
+              class="scan-uploader"
+              :loading="scanUploading"
+            >
+              <template #prepend>
+                <q-icon name="cloud_upload" />
+              </template>
+
+              <template #append>
+                <q-icon name="attach_file" />
+              </template>
+            </q-file>
+
+            <div v-if="scanFile" class="scan-preview q-mt-md">
+              <div class="row items-center no-wrap">
+                <q-icon name="description" size="22px" class="campus-accent q-mr-sm" />
+
+                <div class="col">
+                  <div class="field-value">{{ scanFile.name }}</div>
+                  <div class="field-label">
+                    Файл выбран, но ещё не сохранён
+                  </div>
+                </div>
+              </div>
+
+              <div class="row q-gutter-sm q-mt-md">
+                <q-btn
+                  outline
+                  class="campus-accent"
+                  icon="visibility"
+                  label="Посмотреть"
+                  @click="openSelectedScan"
+                />
+
+                <q-btn
+                  outline
+                  color="negative"
+                  icon="close"
+                  label="Убрать"
+                  @click="clearSelectedScan"
+                />
+
+                <q-btn
+                  unelevated
+                  color="primary"
+                  icon="save"
+                  label="Сохранить скан"
+                  :loading="scanUploading"
+                  @click="saveSelectedScan"
+                />
+              </div>
             </div>
           </q-card-section>
         </q-card>
@@ -324,7 +430,10 @@ import {
   getRequestById,
   updateSecretaryComment,
   updateRequestStatus,
-  acceptRequest
+  acceptRequest,
+  uploadRequestScan,
+  downloadRequestScan,
+  deleteRequestScan
 } from 'src/api/requests'
 import { getRequestHistory } from 'src/api/requestHistory'
 import { getFaculties } from 'src/api/faculties'
@@ -346,6 +455,9 @@ const history = ref([])
 const statusHistory = ref([])
 const commentText = ref('')
 const registrationNumbers = ref([])
+
+const scanFile = ref(null)
+const scanUploading = ref(false)
 
 const faculties = ref([])
 const accessRows = ref([])
@@ -401,16 +513,6 @@ const registrationLabel = computed(() => {
   })
 })
 
-function formatRegistrationNumber(number) {
-  if (!number?.registrationNumber || !number?.registrationYear) return ''
-
-  const facultyCodeValue = facultyCode(number.facultyId)
-  const regNumber = String(number.registrationNumber).padStart(4, '0')
-  const year = String(number.registrationYear).slice(-2)
-
-  return `${facultyCodeValue}-${regNumber}/${year}`
-}
-
 const canRollbackStatus = computed(() => {
   return request.value?.status !== 'NEW' && statusHistory.value.length > 1
 })
@@ -432,6 +534,16 @@ const dialogMainText = computed(() => {
 
   return 'Вы уверены, что хотите изменить статус заявки?'
 })
+
+function formatRegistrationNumber(number) {
+  if (!number?.registrationNumber || !number?.registrationYear) return ''
+
+  const facultyCodeValue = facultyCode(number.facultyId)
+  const regNumber = String(number.registrationNumber).padStart(4, '0')
+  const year = String(number.registrationYear).slice(-2)
+
+  return `${facultyCodeValue}-${regNumber}/${year}`
+}
 
 function canSeeFaculty(facultyId) {
   if (auth.role === 'ADMIN') return true
@@ -474,7 +586,7 @@ function facultyLabel(facultyId) {
   if (!faculty) return '—'
 
   return faculty.code
-    ? `${faculty.code} — ${faculty.name}`
+    ? `${facultyCode(facultyId)} — ${faculty.name}`
     : faculty.name
 }
 
@@ -521,7 +633,13 @@ function normalizeRequest(data) {
     registeredAt: data.registeredAt ? formatDateTime(data.registeredAt) : null,
     registeredBy: auth.login || '—',
     studentComment: data.studentComment || '',
-    secretaryComment: data.secretaryComment || ''
+    secretaryComment: data.secretaryComment || '',
+    needScan: data.needScan === true,
+    scanFileName: data.scanFileName || '',
+    scanOriginalFileName: data.scanOriginalFileName || '',
+    scanContentType: data.scanContentType || '',
+    scanUploadedAt: data.scanUploadedAt ? formatDateTime(data.scanUploadedAt) : null,
+    scanUploadedBy: data.scanUploadedBy || ''
   }
 }
 
@@ -574,6 +692,10 @@ function normalizeHistory(items) {
         title = 'Комментарий студента'
       } else if (item.actionType === 'SECRETARY_COMMENT') {
         title = 'Комментарий секретаря'
+      } else if (item.actionType === 'SCAN_UPLOAD') {
+        title = 'Скан справки прикреплён'
+      } else if (item.actionType === 'SCAN_DELETE') {
+        title = 'Скан справки удалён'
       } else if (item.actionType === 'ARCHIVE') {
         title = 'Архивация'
       } else if (item.actionType === 'CANCEL') {
@@ -836,6 +958,109 @@ async function unarchiveRequest() {
   }
 }
 
+function openSelectedScan() {
+  if (!scanFile.value) return
+
+  const url = URL.createObjectURL(scanFile.value)
+  window.open(url, '_blank')
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 10000)
+}
+
+function clearSelectedScan() {
+  scanFile.value = null
+}
+
+async function saveSelectedScan() {
+  if (!scanFile.value) {
+    $q.notify({
+      type: 'negative',
+      message: 'Сначала выберите файл скана.',
+      position: 'top'
+    })
+    return
+  }
+
+  scanUploading.value = true
+
+  try {
+    await uploadRequestScan(requestId, scanFile.value)
+    scanFile.value = null
+    await loadRequestCard()
+
+    $q.notify({
+      type: 'positive',
+      message: 'Скан справки сохранён.',
+      position: 'top'
+    })
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.message || 'Не удалось сохранить скан справки.',
+      position: 'top'
+    })
+  } finally {
+    scanUploading.value = false
+  }
+}
+
+async function openScan() {
+  try {
+    const response = await downloadRequestScan(requestId)
+
+    const blob = new Blob([response.data], {
+      type: request.value.scanContentType || response.data.type || 'application/octet-stream'
+    })
+
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, 10000)
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось открыть скан справки.',
+      position: 'top'
+    })
+  }
+}
+
+function removeScan() {
+  $q.dialog({
+    title: 'Удаление скана',
+    message: 'Удалить прикреплённый скан справки?',
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      await deleteRequestScan(requestId)
+      await loadRequestCard()
+
+      $q.notify({
+        type: 'positive',
+        message: 'Скан справки удалён.',
+        position: 'top'
+      })
+    } catch (err) {
+      console.error(err)
+
+      $q.notify({
+        type: 'negative',
+        message: 'Не удалось удалить скан справки.',
+        position: 'top'
+      })
+    }
+  })
+}
+
 async function saveComment() {
   if (!commentText.value.trim()) {
     $q.notify({
@@ -900,5 +1125,27 @@ onMounted(() => {
 
 .registration-chip {
   width: fit-content;
+  color: #7a0019;
+  border-color: #7a0019;
+  font-weight: 500;
+}
+
+.scan-info {
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.scan-preview {
+  border: 1px dashed #7a0019;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff8fa;
+}
+
+.scan-uploader :deep(.q-field__control) {
+  min-height: 92px;
+  border-style: dashed;
 }
 </style>
