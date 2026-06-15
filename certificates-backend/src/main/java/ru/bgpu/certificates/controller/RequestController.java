@@ -6,10 +6,12 @@ import ru.bgpu.certificates.entity.AccessAccount;
 import ru.bgpu.certificates.entity.Faculty;
 import ru.bgpu.certificates.entity.Request;
 import ru.bgpu.certificates.entity.RequestHistory;
+import ru.bgpu.certificates.entity.RequestRegistrationNumber;
 import ru.bgpu.certificates.repository.AccessAccountFacultyRepository;
 import ru.bgpu.certificates.repository.AccessAccountRepository;
 import ru.bgpu.certificates.repository.FacultyRepository;
 import ru.bgpu.certificates.repository.RequestHistoryRepository;
+import ru.bgpu.certificates.repository.RequestRegistrationNumberRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
 
 import java.time.LocalDateTime;
@@ -26,6 +28,7 @@ public class RequestController {
     private final FacultyRepository facultyRepository;
     private final AccessAccountRepository accessAccountRepository;
     private final AccessAccountFacultyRepository accessAccountFacultyRepository;
+    private final RequestRegistrationNumberRepository requestRegistrationNumberRepository;
 
     @GetMapping
     public List<Request> getAll(
@@ -81,7 +84,7 @@ public class RequestController {
             request.setNeedScan(false);
         }
 
-        if (request.getCopiesCount() == null) {
+        if (request.getCopiesCount() == null || request.getCopiesCount() < 1) {
             request.setCopiesCount(1);
         }
 
@@ -166,19 +169,41 @@ public class RequestController {
             nextNumber = 1;
         }
 
+        Integer copiesCount = existing.getCopiesCount();
+
+        if (copiesCount == null || copiesCount < 1) {
+            copiesCount = 1;
+        }
+
         String oldStatus = existing.getStatus();
+        int year = LocalDateTime.now().getYear();
+        LocalDateTime now = LocalDateTime.now();
 
         existing.setStatus("ACCEPTED");
         existing.setRegistrationNumber(nextNumber);
-        existing.setRegistrationYear(LocalDateTime.now().getYear());
-        existing.setRegisteredAt(LocalDateTime.now());
-        existing.setAcceptedAt(LocalDateTime.now());
-        existing.setUpdatedAt(LocalDateTime.now());
+        existing.setRegistrationYear(year);
+        existing.setRegisteredAt(now);
+        existing.setAcceptedAt(now);
+        existing.setUpdatedAt(now);
 
         Request saved = requestRepository.save(existing);
 
-        faculty.setNextRegistrationNumber(nextNumber + 1);
-        faculty.setUpdatedAt(LocalDateTime.now());
+        requestRegistrationNumberRepository.deleteByRequestId(saved.getId());
+
+        for (int i = 0; i < copiesCount; i++) {
+            requestRegistrationNumberRepository.save(
+                    RequestRegistrationNumber.builder()
+                            .requestId(saved.getId())
+                            .facultyId(saved.getFacultyId())
+                            .registrationNumber(nextNumber + i)
+                            .registrationYear(year)
+                            .createdAt(now)
+                            .build()
+            );
+        }
+
+        faculty.setNextRegistrationNumber(nextNumber + copiesCount);
+        faculty.setUpdatedAt(now);
         facultyRepository.save(faculty);
 
         requestHistoryRepository.save(
@@ -187,7 +212,7 @@ public class RequestController {
                         .actionType("REGISTER")
                         .oldStatus(oldStatus)
                         .newStatus("ACCEPTED")
-                        .comment("Заявка принята и зарегистрирована")
+                        .comment("Заявка принята и зарегистрирована. Присвоено номеров: " + copiesCount)
                         .actorLogin(actorLogin(actor, "secretary"))
                         .actorFullName(actorFullName(actor, "Секретарь"))
                         .actorRole(actorRole(actor, "SECRETARY"))
@@ -343,6 +368,7 @@ public class RequestController {
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
+        requestRegistrationNumberRepository.deleteByRequestId(id);
         requestRepository.deleteById(id);
     }
 
