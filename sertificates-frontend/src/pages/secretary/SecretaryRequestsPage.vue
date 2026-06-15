@@ -158,8 +158,6 @@
                   :key="number.id"
                   dense
                   outline
-                  color="primary"
-                  text-color="primary"
                   class="registration-chip"
                 >
                   {{ formatRegistrationNumber(number) }}
@@ -189,13 +187,17 @@
           <template #body-cell-actions="props">
             <q-td :props="props">
               <q-btn
-                unelevated
+                flat
                 dense
-                color="primary"
+                round
                 icon="open_in_new"
-                label="Открыть"
+                class="campus-accent"
                 @click="openRequest(props.row.id)"
-              />
+              >
+                <q-tooltip>
+                  Открыть заявку
+                </q-tooltip>
+              </q-btn>
             </q-td>
           </template>
 
@@ -285,7 +287,7 @@ const columns = [
   { name: 'id', label: '№ заявки', field: 'id', sortable: true, align: 'left' },
   { name: 'fio', label: 'ФИО', field: 'fio', sortable: true, align: 'left' },
   { name: 'status', label: 'Статус', field: 'status', align: 'left' },
-  { name: 'actions', label: 'Действие', field: 'actions', align: 'left' },
+  { name: 'actions', label: '', field: 'actions', align: 'center' },
   { name: 'faculty', label: 'Факультет', field: 'faculty', align: 'left' },
   { name: 'courseGroup', label: 'Курс/группа', field: 'courseGroup', align: 'left' },
   { name: 'purpose', label: 'Куда нужна справка', field: 'purpose', align: 'left' },
@@ -705,5 +707,8 @@ onMounted(() => {
 
 .registration-chip {
   width: fit-content;
+  color: #7a0019;
+  border-color: #7a0019;
+  font-weight: 500;
 }
 </style>

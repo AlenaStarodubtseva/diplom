@@ -20,7 +20,6 @@
         <q-separator class="q-mb-md" />
 
         <q-tab-panels v-model="tab" animated>
-          <!-- ЗАЯВКИ -->
           <q-tab-panel name="requests" class="q-pa-none">
             <div class="row items-center q-col-gutter-sm q-mb-md">
               <div class="col-12 col-md">
@@ -29,7 +28,7 @@
                   dense
                   outlined
                   debounce="300"
-                  placeholder="Поиск: ФИО / № заявки / группа / рег. номер / цель"
+                  placeholder="Поиск: ФИО / № заявки / группа / рег. номер / цель / статус"
                 >
                   <template #append>
                     <q-icon name="search" />
@@ -133,6 +132,7 @@
                   label="В архив"
                   @click="bulkArchiveRequests"
                 />
+
                 <q-btn
                   unelevated
                   color="positive"
@@ -174,10 +174,48 @@
             >
               <template #body-cell-registration="props">
                 <q-td :props="props">
-                  <span v-if="props.row.registrationNumber">
+                  <div v-if="props.row.registrationNumbers?.length" class="column q-gutter-xs">
+                    <q-chip
+                      v-for="number in props.row.registrationNumbers"
+                      :key="number.id"
+                      dense
+                      outline
+                      class="registration-chip"
+                    >
+                      {{ formatRegistrationNumber(number) }}
+                    </q-chip>
+                  </div>
+
+                  <span v-else-if="props.row.registrationNumber">
                     {{ formatRegistration(props.row) }}
                   </span>
+
                   <span v-else class="text-grey-6">Не присвоен</span>
+                </q-td>
+              </template>
+
+              <template #body-cell-status="props">
+                <q-td :props="props">
+                  <q-chip dense :color="statusColor(props.row.status)" text-color="white">
+                    {{ statusLabel(props.row.status) }}
+                  </q-chip>
+                </q-td>
+              </template>
+
+              <template #body-cell-actions="props">
+                <q-td :props="props">
+                  <q-btn
+                    flat
+                    dense
+                    round
+                    icon="open_in_new"
+                    class="campus-accent"
+                    @click="openRequest(props.row.id)"
+                  >
+                    <q-tooltip>
+                      Открыть заявку
+                    </q-tooltip>
+                  </q-btn>
                 </q-td>
               </template>
 
@@ -202,27 +240,6 @@
                 </q-td>
               </template>
 
-              <template #body-cell-status="props">
-                <q-td :props="props">
-                  <q-chip dense :color="statusColor(props.row.status)" text-color="white">
-                    {{ statusLabel(props.row.status) }}
-                  </q-chip>
-                </q-td>
-              </template>
-
-              <template #body-cell-actions="props">
-                <q-td :props="props">
-                  <q-btn
-                    flat
-                    dense
-                    round
-                    icon="open_in_new"
-                    class="campus-accent"
-                    @click="openRequest(props.row.id)"
-                  />
-                </q-td>
-              </template>
-
               <template #no-data>
                 <div class="full-width row flex-center text-grey-7 q-gutter-sm q-pa-lg">
                   <q-icon name="inbox" size="24px" />
@@ -232,7 +249,6 @@
             </q-table>
           </q-tab-panel>
 
-          <!-- ДОСТУПЫ -->
           <q-tab-panel name="access" class="q-pa-none">
             <div class="row items-center q-col-gutter-sm q-mb-md">
               <div class="col-12 col-md">
@@ -379,6 +395,7 @@
                       class="campus-accent"
                       @click="openEditAccessDialog(props.row)"
                     />
+
                     <q-btn
                       flat
                       dense
@@ -387,6 +404,7 @@
                       :color="props.row.active ? 'negative' : 'positive'"
                       @click="toggleAccessStatus(props.row)"
                     />
+
                     <q-btn
                       flat
                       dense
@@ -408,7 +426,6 @@
             </q-table>
           </q-tab-panel>
 
-          <!-- ФАКУЛЬТЕТЫ -->
           <q-tab-panel name="faculties" class="q-pa-none">
             <div class="row items-center q-col-gutter-sm q-mb-md">
               <div class="col-12 col-md">
@@ -472,6 +489,7 @@
                       class="campus-accent"
                       @click="openEditFacultyDialog(props.row)"
                     />
+
                     <q-btn
                       flat
                       dense
@@ -496,7 +514,6 @@
       </q-card-section>
     </q-card>
 
-    <!-- Диалог доступа -->
     <q-dialog v-model="accessDialog.open" persistent>
       <q-card style="min-width: 560px; max-width: 95vw">
         <q-card-section class="row items-center">
@@ -571,7 +588,6 @@
       </q-card>
     </q-dialog>
 
-    <!-- Диалог факультета -->
     <q-dialog v-model="facultyDialog.open" persistent>
       <q-card style="min-width: 520px; max-width: 95vw">
         <q-card-section class="row items-center">
@@ -590,13 +606,16 @@
             outlined
             dense
             label="Код факультета"
+            hint="Например: 01, 02, 03"
           />
+
           <q-input
             v-model="facultyDialog.form.name"
             outlined
             dense
             label="Название факультета"
           />
+
           <q-input
             v-model.number="facultyDialog.form.nextRegistrationNumber"
             type="number"
@@ -604,6 +623,7 @@
             dense
             label="Следующий регистрационный номер"
           />
+
           <q-toggle
             v-model="facultyDialog.form.active"
             color="primary"
@@ -639,6 +659,7 @@ import {
   deleteAccessAccount
 } from 'src/api/accessAccounts'
 import { generateCommonRequestDocument } from 'src/api/requestDocuments'
+import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
 
 const router = useRouter()
 const $q = useQuasar()
@@ -676,11 +697,11 @@ const typeOptions = [
 
 const statusOptions = [
   { label: 'Новая', value: 'NEW' },
-  { label: 'Принято', value: 'ACCEPTED' },
+  { label: 'Принята', value: 'ACCEPTED' },
   { label: 'В обработке', value: 'IN_WORK' },
-  { label: 'Отложено', value: 'DELAYED' },
+  { label: 'Задерживается', value: 'DELAYED' },
   { label: 'Готово', value: 'READY' },
-  { label: 'Отклонено', value: 'REJECTED' },
+  { label: 'Отклонена', value: 'REJECTED' },
   { label: 'В архиве', value: 'ARCHIVED' },
   { label: 'Отменена', value: 'CANCELLED' }
 ]
@@ -692,7 +713,7 @@ const roleOptions = [
 
 const facultyOptions = computed(() =>
   faculties.value.map((f) => ({
-    label: `${f.code} — ${f.name}`,
+    label: `${facultyCode(f.id)} — ${f.name}`,
     value: f.id
   }))
 )
@@ -710,18 +731,18 @@ const adminAccessCount = computed(() =>
 )
 
 const requestColumns = [
-  { name: 'registration', label: 'Рег. номер', field: 'registration', align: 'left' },
+  { name: 'registration', label: 'Рег. номера', field: 'registration', align: 'left' },
   { name: 'id', label: '№ заявки', field: 'id', sortable: true, align: 'left' },
   { name: 'fio', label: 'ФИО', field: 'fio', sortable: true, align: 'left' },
+  { name: 'status', label: 'Статус', field: 'status', align: 'left' },
+  { name: 'actions', label: '', field: 'actions', align: 'center' },
   { name: 'facultyId', label: 'Факультет', field: 'facultyId', align: 'left' },
   { name: 'courseGroup', label: 'Курс/группа', field: 'courseGroup', align: 'left' },
   { name: 'purpose', label: 'Куда нужна справка', field: 'purpose', align: 'left' },
   { name: 'qty', label: 'Кол-во', field: 'qty', sortable: true, align: 'left' },
   { name: 'type', label: 'Тип', field: 'type', align: 'left' },
   { name: 'period', label: 'Период', field: 'period', align: 'left' },
-  { name: 'createdAt', label: 'Дата подачи', field: 'createdAt', sortable: true, align: 'left' },
-  { name: 'status', label: 'Статус', field: 'status', align: 'left' },
-  { name: 'actions', label: '', field: 'actions', align: 'right' }
+  { name: 'createdAt', label: 'Дата подачи', field: 'createdAt', sortable: true, align: 'left' }
 ]
 
 const accessColumns = [
@@ -752,16 +773,27 @@ const filteredRequests = computed(() => {
       if (requestFilters.value.facultyId && r.facultyId !== requestFilters.value.facultyId) return false
       if (requestFilters.value.type && r.type !== requestFilters.value.type) return false
       if (requestFilters.value.status && r.status !== requestFilters.value.status) return false
-      if (requestFilters.value.onlyRegistered && !r.registrationNumber) return false
+
+      if (requestFilters.value.onlyRegistered) {
+        const hasRegistrationNumbers = r.registrationNumbers?.length || r.registrationNumber
+        if (!hasRegistrationNumbers) return false
+      }
 
       if (q) {
+        const registrationText = r.registrationNumbers?.length
+          ? r.registrationNumbers.map(formatRegistrationNumber).join(' ')
+          : r.registrationNumber
+            ? formatRegistration(r)
+            : ''
+
         const haystack = [
           r.id,
           r.fio,
           facultyLabel(r.facultyId),
           r.courseGroup,
           r.purpose,
-          r.registrationNumber ? formatRegistration(r) : ''
+          statusLabel(r.status),
+          registrationText
         ]
           .join(' ')
           .toLowerCase()
@@ -838,7 +870,31 @@ async function loadRequests() {
 
   try {
     const { data } = await getRequests()
-    requests.value = data.map(normalizeRequestRow)
+    const normalizedRows = data.map(normalizeRequestRow)
+    const requestIds = normalizedRows.map(row => row.id)
+
+    let registrationNumbersByRequestId = {}
+
+    if (requestIds.length) {
+      const registrationNumbersResponse = await getRegistrationNumbersByRequestIds(requestIds)
+
+      registrationNumbersByRequestId = registrationNumbersResponse.data.reduce((acc, number) => {
+        const key = Number(number.requestId)
+
+        if (!acc[key]) {
+          acc[key] = []
+        }
+
+        acc[key].push(number)
+
+        return acc
+      }, {})
+    }
+
+    requests.value = normalizedRows.map(row => ({
+      ...row,
+      registrationNumbers: registrationNumbersByRequestId[row.id] || []
+    }))
   } catch (err) {
     console.error(err)
     requestsError.value = 'Не удалось загрузить заявки'
@@ -923,7 +979,8 @@ function normalizeRequestRow(r) {
     status: r.status,
     archived: r.status === 'ARCHIVED',
     registrationNumber: r.registrationNumber,
-    registrationYear: r.registrationYear
+    registrationYear: r.registrationYear,
+    registrationNumbers: []
   }
 }
 
@@ -931,12 +988,17 @@ function facultyLabel(facultyId) {
   if (!facultyId) return '—'
 
   const faculty = faculties.value.find((f) => f.id === facultyId)
-  return faculty ? `${faculty.code} — ${faculty.name}` : '—'
+  return faculty ? `${facultyCode(facultyId)} — ${faculty.name}` : '—'
 }
 
 function facultyCode(facultyId) {
   const faculty = faculties.value.find((f) => f.id === facultyId)
-  return faculty?.code || ''
+
+  if (faculty?.code && /^\d+$/.test(String(faculty.code))) {
+    return String(faculty.code).padStart(2, '0')
+  }
+
+  return String(facultyId).padStart(2, '0')
 }
 
 function formatDate(value) {
@@ -952,9 +1014,21 @@ function formatDate(value) {
 function formatRegistration(row) {
   if (!row.registrationNumber || !row.registrationYear) return ''
 
-  const code = facultyCode(row.facultyId)
+  return formatRegistrationNumber({
+    facultyId: row.facultyId,
+    registrationNumber: row.registrationNumber,
+    registrationYear: row.registrationYear
+  })
+}
 
-  return `${code}-${String(row.registrationNumber).padStart(4, '0')}/${row.registrationYear}`
+function formatRegistrationNumber(number) {
+  if (!number?.registrationNumber || !number?.registrationYear) return ''
+
+  const code = facultyCode(number.facultyId)
+  const regNumber = String(number.registrationNumber).padStart(4, '0')
+  const year = String(number.registrationYear).slice(-2)
+
+  return `${code}-${regNumber}/${year}`
 }
 
 function typeLabel(type) {
@@ -1433,5 +1507,12 @@ onMounted(async () => {
 
 .campus-table :deep(.q-table__bottom) {
   border-top: 1px solid #eee;
+}
+
+.registration-chip {
+  width: fit-content;
+  color: #7a0019;
+  border-color: #7a0019;
+  font-weight: 500;
 }
 </style>
