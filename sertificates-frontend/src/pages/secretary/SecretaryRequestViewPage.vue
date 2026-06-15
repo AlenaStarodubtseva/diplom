@@ -107,14 +107,28 @@
             <div class="text-subtitle1 q-mb-md">Регистрация</div>
 
             <div class="q-mb-md">
-              <div class="field-label">Регистрационный номер</div>
-              <div class="field-value">
-                <template v-if="request.registrationNumber">
-                  {{ registrationLabel }}
-                </template>
-                <template v-else>
-                  <span class="text-grey-7">Номер не присвоен</span>
-                </template>
+              <div class="field-label">Регистрационные номера</div>
+
+              <div v-if="registrationNumbers.length" class="column q-gutter-xs q-mt-xs">
+                <q-chip
+                  v-for="number in registrationNumbers"
+                  :key="number.id"
+                  dense
+                  outline
+                  color="primary"
+                  text-color="primary"
+                  class="registration-chip"
+                >
+                  {{ formatRegistrationNumber(number) }}
+                </q-chip>
+              </div>
+
+              <div v-else-if="request.registrationNumber" class="field-value">
+                {{ registrationLabel }}
+              </div>
+
+              <div v-else class="field-value text-grey-7">
+                Номер не присвоен
               </div>
             </div>
 
@@ -315,6 +329,7 @@ import {
 import { getRequestHistory } from 'src/api/requestHistory'
 import { getFaculties } from 'src/api/faculties'
 import { getAccessAccounts } from 'src/api/accessAccounts'
+import { getRegistrationNumbersByRequestId } from 'src/api/requestRegistrationNumbers'
 
 const $q = useQuasar()
 const route = useRoute()
@@ -330,6 +345,7 @@ const request = ref(null)
 const history = ref([])
 const statusHistory = ref([])
 const commentText = ref('')
+const registrationNumbers = ref([])
 
 const faculties = ref([])
 const accessRows = ref([])
@@ -378,12 +394,22 @@ const availableFacultyIds = computed(() => {
 const registrationLabel = computed(() => {
   if (!request.value?.registrationNumber) return ''
 
-  const facultyCodeValue = facultyCode(request.value.facultyId)
-  const regNumber = String(request.value.registrationNumber).padStart(4, '0')
-  const year = request.value.registrationYear || new Date().getFullYear()
+  return formatRegistrationNumber({
+    facultyId: request.value.facultyId,
+    registrationNumber: request.value.registrationNumber,
+    registrationYear: request.value.registrationYear
+  })
+})
+
+function formatRegistrationNumber(number) {
+  if (!number?.registrationNumber || !number?.registrationYear) return ''
+
+  const facultyCodeValue = facultyCode(number.facultyId)
+  const regNumber = String(number.registrationNumber).padStart(4, '0')
+  const year = String(number.registrationYear).slice(-2)
 
   return `${facultyCodeValue}-${regNumber}/${year}`
-})
+}
 
 const canRollbackStatus = computed(() => {
   return request.value?.status !== 'NEW' && statusHistory.value.length > 1
@@ -454,7 +480,12 @@ function facultyLabel(facultyId) {
 
 function facultyCode(facultyId) {
   const faculty = faculties.value.find(f => f.id === facultyId)
-  return faculty?.code || `F${String(facultyId).padStart(2, '0')}`
+
+  if (faculty?.code && /^\d+$/.test(String(faculty.code))) {
+    return String(faculty.code).padStart(2, '0')
+  }
+
+  return String(facultyId).padStart(2, '0')
 }
 
 function formatDate(value) {
@@ -619,8 +650,12 @@ async function loadRequestCard() {
 
     if (!canSeeFaculty(normalized.facultyId)) {
       error.value = 'Нет доступа к заявке этого факультета'
+      registrationNumbers.value = []
       return
     }
+
+    const registrationNumbersResponse = await getRegistrationNumbersByRequestId(requestId)
+    registrationNumbers.value = registrationNumbersResponse.data
 
     const relatedHistory = historyResponse.data.filter(item => Number(item.requestId) === requestId)
 
@@ -861,5 +896,9 @@ onMounted(() => {
 .field-value {
   font-size: 15px;
   font-weight: 500;
+}
+
+.registration-chip {
+  width: fit-content;
 }
 </style>
