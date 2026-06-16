@@ -845,6 +845,7 @@ import {
   previewPrintCertificates
 } from 'src/api/requestDocuments'
 import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
+import CertificateSpreadsheetEditor from 'src/components/CertificateSpreadsheetEditor.vue'
 
 const router = useRouter()
 const $q = useQuasar()
