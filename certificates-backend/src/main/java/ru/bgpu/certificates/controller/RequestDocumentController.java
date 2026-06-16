@@ -11,8 +11,9 @@ import ru.bgpu.certificates.entity.Request;
 import ru.bgpu.certificates.repository.AccessAccountFacultyRepository;
 import ru.bgpu.certificates.repository.AccessAccountRepository;
 import ru.bgpu.certificates.repository.RequestRepository;
+import ru.bgpu.certificates.service.CertificatePrintService;
 import ru.bgpu.certificates.service.RequestDocumentService;
-
+import ru.bgpu.certificates.dto.CertificatePrintPreviewDto;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.List;
 public class RequestDocumentController {
 
     private final RequestDocumentService requestDocumentService;
+    private final CertificatePrintService certificatePrintService;
     private final RequestRepository requestRepository;
     private final AccessAccountRepository accessAccountRepository;
     private final AccessAccountFacultyRepository accessAccountFacultyRepository;
@@ -50,6 +52,39 @@ public class RequestDocumentController {
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 ))
                 .body(file);
+    }
+
+    @PostMapping("/print-certificates")
+    public ResponseEntity<byte[]> generatePrintCertificates(
+            @RequestBody GenerateDocumentRequest request
+    ) {
+        checkAccess(request);
+
+        byte[] file = certificatePrintService.generatePrintCertificates(request.getRequestIds());
+
+        String filename = URLEncoder.encode(
+                "Справки_для_печати.xls",
+                StandardCharsets.UTF_8
+        ).replace("+", "%20");
+
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + filename
+                )
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.ms-excel"
+                ))
+                .body(file);
+    }
+
+    @PostMapping("/print-certificates-preview")
+    public List<CertificatePrintPreviewDto> previewPrintCertificates(
+            @RequestBody GenerateDocumentRequest request
+    ) {
+        checkAccess(request);
+
+        return certificatePrintService.buildPrintPreview(request.getRequestIds());
     }
 
     private void checkAccess(GenerateDocumentRequest request) {

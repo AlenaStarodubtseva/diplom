@@ -140,6 +140,14 @@
                   label="Сформировать общий документ"
                   @click="generateCommonDocument"
                 />
+
+                <q-btn
+                  unelevated
+                  color="primary"
+                  icon="print"
+                  label="Справки для печати"
+                  @click="generateCertificatesForPrint"
+                />
               </template>
 
               <template v-else>
@@ -637,6 +645,179 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="printPreviewOpen" maximized>
+      <q-card class="print-preview-dialog">
+        <q-card-section class="row items-center no-print">
+          <div class="text-h6">Предпросмотр справок для печати</div>
+
+          <q-space />
+
+          <q-btn
+            flat
+            dense
+            round
+            icon="close"
+            v-close-popup
+          />
+        </q-card-section>
+
+        <q-separator class="no-print" />
+
+        <q-card-section class="row q-gutter-sm no-print">
+          <q-btn
+            unelevated
+            color="primary"
+            icon="print"
+            label="Печать"
+            :loading="printPreviewLoading"
+            @click="printCertificatesPreview"
+          />
+
+          <q-btn
+            outline
+            class="campus-accent"
+            icon="table_view"
+            label="Скачать XLS"
+            @click="downloadPrintCertificatesXls"
+          />
+        </q-card-section>
+
+        <q-card-section class="print-area">
+          <div
+            v-for="certificate in printPreviewRows"
+            :key="certificate.registrationNumber"
+            class="certificate-preview"
+          >
+            <div class="certificate-grid">
+              <div class="left-block">
+                <div class="ministry">
+                  МИНИСТЕРСТВО ПРОСВЕЩЕНИЯ<br>
+                  РОССИЙСКОЙ ФЕДЕРАЦИИ
+                </div>
+
+                <div class="small-bold q-mt-xs">
+                  федеральное государственное<br>
+                  бюджетное образовательное<br>
+                  учреждение высшего<br>
+                  образования
+                </div>
+
+                <div class="university q-mt-md">
+                  «Благовещенский государственный<br>
+                  педагогический университет»<br>
+                  (ФГБОУ ВО «БГПУ»)
+                </div>
+
+                <div class="contacts q-mt-md">
+                  Ленина ул., д. 104, г. Благовещенск<br>
+                  Амурская область, 675000<br>
+                  Тел./факс (4162) 99-16-26<br>
+                  E-mail: rektorat@bgpu.ru<br>
+                  http://www.bgpu.ru
+                </div>
+
+                <div class="reg-line q-mt-md">
+                  На № _________ от № _________
+                </div>
+
+                <div class="license q-mt-md">
+                  Лицензия на право осуществления<br>
+                  образовательной деятельности<br>
+                  регистрационный номер<br>
+                  №Л035-00115-28/00097102 от 29.02.2016 г.<br>
+                  предоставлена бессрочно.
+                </div>
+              </div>
+
+              <div class="right-block">
+                <div class="certificate-title">СПРАВКА</div>
+
+                <div class="row-line">
+                  <span>Выдана</span>
+                </div>
+
+                <div class="data-line">
+                  <b>ФИО:</b>
+                  <span>{{ certificate.studentFullName }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Дата рождения:</b>
+                  <span>{{ certificate.birthDate }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Курс:</b>
+                  <span>{{ certificate.course }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Факультет:</b>
+                  <span>{{ certificate.facultyName }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Направление подготовки:</b>
+                  <span>{{ certificate.direction }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Профиль:</b>
+                  <span>{{ certificate.profile }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Группа:</b>
+                  <span>{{ certificate.groupName }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Форма обучения:</b>
+                  <span>{{ certificate.educationForm }}</span>
+                </div>
+
+                <div class="data-line">
+                  <b>Основа обучения:</b>
+                  <span>{{ certificate.educationBasis }}</span>
+                </div>
+
+                <div class="text-line">
+                  Обучается по основной образовательной программе бакалавриата,
+                  предусмотренной федеральным государственным образовательным стандартом.
+                </div>
+
+                <div class="data-line">
+                  <b>Начало обучения:</b>
+                  <span>{{ certificate.studyPeriod }}</span>
+                </div>
+
+                <div class="data-line q-mt-md">
+                  <b>Справка выдана для предъявления:</b>
+                  <span>{{ certificate.purpose }}</span>
+                </div>
+
+                <div class="data-line q-mt-md">
+                  <b>Основание выдачи справки:</b>
+                  <span>{{ certificate.enrollmentOrder }}</span>
+                </div>
+
+                <div class="signatures">
+                  <div>
+                    Декан факультета __________________ {{ certificate.deanName }}
+                  </div>
+                  <div>
+                    Секретарь __________________ {{ certificate.secretaryName }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cut-line"></div>
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -658,7 +839,11 @@ import {
   toggleAccessAccountActive,
   deleteAccessAccount
 } from 'src/api/accessAccounts'
-import { generateCommonRequestDocument } from 'src/api/requestDocuments'
+import {
+  generateCommonRequestDocument,
+  generatePrintCertificates,
+  previewPrintCertificates
+} from 'src/api/requestDocuments'
 import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
 
 const router = useRouter()
@@ -678,6 +863,10 @@ const requestsError = ref('')
 const facultiesLoading = ref(false)
 const facultiesError = ref('')
 const accessLoading = ref(false)
+
+const printPreviewOpen = ref(false)
+const printPreviewLoading = ref(false)
+const printPreviewRows = ref([])
 
 const faculties = ref([])
 const requests = ref([])
@@ -1199,6 +1388,75 @@ async function generateCommonDocument() {
   }
 }
 
+async function generateCertificatesForPrint() {
+  if (!selectedRequests.value.length) {
+    $q.notify({
+      type: 'negative',
+      message: 'Выберите хотя бы одну заявку.',
+      position: 'top'
+    })
+    return
+  }
+
+  printPreviewLoading.value = true
+
+  try {
+    const requestIds = selectedRequests.value.map((request) => request.id)
+
+    const response = await previewPrintCertificates(requestIds)
+
+    printPreviewRows.value = response.data || []
+    printPreviewOpen.value = true
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message:
+        err.response?.data?.message ||
+        'Не удалось сформировать предпросмотр справок.',
+      position: 'top'
+    })
+  } finally {
+    printPreviewLoading.value = false
+  }
+}
+
+async function downloadPrintCertificatesXls() {
+  if (!selectedRequests.value.length) return
+
+  try {
+    const requestIds = selectedRequests.value.map((request) => request.id)
+
+    const response = await generatePrintCertificates(requestIds)
+
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.ms-excel'
+    })
+
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'Справки_для_печати.xls'
+    link.click()
+
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error(err)
+
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось скачать XLS.',
+      position: 'top'
+    })
+  }
+}
+
+function printCertificatesPreview() {
+  window.print()
+}
+
 function openCreateAccessDialog() {
   accessDialog.value = {
     open: true,
@@ -1514,5 +1772,138 @@ onMounted(async () => {
   color: #7a0019;
   border-color: #7a0019;
   font-weight: 500;
+}
+
+.print-preview-dialog {
+  background: #f7f7f8;
+}
+
+.print-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #f7f7f8;
+}
+
+.certificate-preview {
+  width: 297mm;
+  height: 105mm;
+  background: #fffef2;
+  border: 1px solid #d8d1a6;
+  box-sizing: border-box;
+  padding: 8mm 10mm 4mm;
+  font-family: "Times New Roman", serif;
+  font-size: 11px;
+  color: #000;
+  page-break-inside: avoid;
+}
+
+.certificate-grid {
+  display: grid;
+  grid-template-columns: 34% 66%;
+  height: 95mm;
+}
+
+.left-block {
+  text-align: center;
+  border-right: 1px solid #b9b087;
+  padding-right: 8px;
+}
+
+.right-block {
+  padding-left: 12px;
+}
+
+.ministry,
+.small-bold,
+.university,
+.license {
+  font-weight: bold;
+}
+
+.contacts {
+  font-size: 10px;
+}
+
+.reg-line {
+  border-top: 1px solid #000;
+  padding-top: 4px;
+}
+
+.certificate-title {
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.row-line {
+  margin-bottom: 8px;
+}
+
+.data-line {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 6px;
+  line-height: 1.25;
+}
+
+.data-line b {
+  text-align: right;
+}
+
+.text-line {
+  margin-top: 6px;
+  text-align: justify;
+  line-height: 1.25;
+}
+
+.signatures {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cut-line {
+  border-top: 1px dashed #000;
+  margin-top: 3mm;
+}
+
+@media print {
+  :global(body *) {
+    visibility: hidden;
+  }
+
+  :global(.print-area),
+  :global(.print-area *) {
+    visibility: visible;
+  }
+
+  :global(.no-print) {
+    display: none !important;
+  }
+
+  :global(.print-area) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 297mm;
+    padding: 0;
+    margin: 0;
+    background: #ffffff;
+  }
+
+  :global(.certificate-preview) {
+    width: 297mm;
+    height: 105mm;
+    border: none;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
 }
 </style>

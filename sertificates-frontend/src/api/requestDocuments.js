@@ -39,3 +39,26 @@ export function generateCommonRequestDocument(requestIds) {
     }
   )
 }
+
+export function generatePrintCertificates(requestIds) {
+  return axios.post(
+    `${API_URL}/print-certificates`,
+    {
+      requestIds,
+      ...getAuthPayload()
+    },
+    {
+      responseType: 'blob'
+    }
+  )
+}
+
+export function previewPrintCertificates(requestIds) {
+  return axios.post(
+    `${API_URL}/print-certificates-preview`,
+    {
+      requestIds,
+      ...getAuthPayload()
+    }
+  )
+}
