@@ -646,178 +646,10 @@
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="printPreviewOpen" maximized>
-      <q-card class="print-preview-dialog">
-        <q-card-section class="row items-center no-print">
-          <div class="text-h6">Предпросмотр справок для печати</div>
-
-          <q-space />
-
-          <q-btn
-            flat
-            dense
-            round
-            icon="close"
-            v-close-popup
-          />
-        </q-card-section>
-
-        <q-separator class="no-print" />
-
-        <q-card-section class="row q-gutter-sm no-print">
-          <q-btn
-            unelevated
-            color="primary"
-            icon="print"
-            label="Печать"
-            :loading="printPreviewLoading"
-            @click="printCertificatesPreview"
-          />
-
-          <q-btn
-            outline
-            class="campus-accent"
-            icon="table_view"
-            label="Скачать XLS"
-            @click="downloadPrintCertificatesXls"
-          />
-        </q-card-section>
-
-        <q-card-section class="print-area">
-          <div
-            v-for="certificate in printPreviewRows"
-            :key="certificate.registrationNumber"
-            class="certificate-preview"
-          >
-            <div class="certificate-grid">
-              <div class="left-block">
-                <div class="ministry">
-                  МИНИСТЕРСТВО ПРОСВЕЩЕНИЯ<br>
-                  РОССИЙСКОЙ ФЕДЕРАЦИИ
-                </div>
-
-                <div class="small-bold q-mt-xs">
-                  федеральное государственное<br>
-                  бюджетное образовательное<br>
-                  учреждение высшего<br>
-                  образования
-                </div>
-
-                <div class="university q-mt-md">
-                  «Благовещенский государственный<br>
-                  педагогический университет»<br>
-                  (ФГБОУ ВО «БГПУ»)
-                </div>
-
-                <div class="contacts q-mt-md">
-                  Ленина ул., д. 104, г. Благовещенск<br>
-                  Амурская область, 675000<br>
-                  Тел./факс (4162) 99-16-26<br>
-                  E-mail: rektorat@bgpu.ru<br>
-                  http://www.bgpu.ru
-                </div>
-
-                <div class="reg-line q-mt-md">
-                  На № _________ от № _________
-                </div>
-
-                <div class="license q-mt-md">
-                  Лицензия на право осуществления<br>
-                  образовательной деятельности<br>
-                  регистрационный номер<br>
-                  №Л035-00115-28/00097102 от 29.02.2016 г.<br>
-                  предоставлена бессрочно.
-                </div>
-              </div>
-
-              <div class="right-block">
-                <div class="certificate-title">СПРАВКА</div>
-
-                <div class="row-line">
-                  <span>Выдана</span>
-                </div>
-
-                <div class="data-line">
-                  <b>ФИО:</b>
-                  <span>{{ certificate.studentFullName }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Дата рождения:</b>
-                  <span>{{ certificate.birthDate }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Курс:</b>
-                  <span>{{ certificate.course }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Факультет:</b>
-                  <span>{{ certificate.facultyName }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Направление подготовки:</b>
-                  <span>{{ certificate.direction }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Профиль:</b>
-                  <span>{{ certificate.profile }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Группа:</b>
-                  <span>{{ certificate.groupName }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Форма обучения:</b>
-                  <span>{{ certificate.educationForm }}</span>
-                </div>
-
-                <div class="data-line">
-                  <b>Основа обучения:</b>
-                  <span>{{ certificate.educationBasis }}</span>
-                </div>
-
-                <div class="text-line">
-                  Обучается по основной образовательной программе бакалавриата,
-                  предусмотренной федеральным государственным образовательным стандартом.
-                </div>
-
-                <div class="data-line">
-                  <b>Начало обучения:</b>
-                  <span>{{ certificate.studyPeriod }}</span>
-                </div>
-
-                <div class="data-line q-mt-md">
-                  <b>Справка выдана для предъявления:</b>
-                  <span>{{ certificate.purpose }}</span>
-                </div>
-
-                <div class="data-line q-mt-md">
-                  <b>Основание выдачи справки:</b>
-                  <span>{{ certificate.enrollmentOrder }}</span>
-                </div>
-
-                <div class="signatures">
-                  <div>
-                    Декан факультета __________________ {{ certificate.deanName }}
-                  </div>
-                  <div>
-                    Секретарь __________________ {{ certificate.secretaryName }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="cut-line"></div>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
+    <CertificateSpreadsheetEditor
+      v-model="printPreviewOpen"
+      :certificates="printPreviewRows"
+    />
   </q-page>
 </template>
 
@@ -841,7 +673,6 @@ import {
 } from 'src/api/accessAccounts'
 import {
   generateCommonRequestDocument,
-  generatePrintCertificates,
   previewPrintCertificates
 } from 'src/api/requestDocuments'
 import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
@@ -866,7 +697,6 @@ const facultiesError = ref('')
 const accessLoading = ref(false)
 
 const printPreviewOpen = ref(false)
-const printPreviewLoading = ref(false)
 const printPreviewRows = ref([])
 
 const faculties = ref([])
@@ -1399,11 +1229,8 @@ async function generateCertificatesForPrint() {
     return
   }
 
-  printPreviewLoading.value = true
-
   try {
     const requestIds = selectedRequests.value.map((request) => request.id)
-
     const response = await previewPrintCertificates(requestIds)
 
     printPreviewRows.value = response.data || []
@@ -1415,47 +1242,10 @@ async function generateCertificatesForPrint() {
       type: 'negative',
       message:
         err.response?.data?.message ||
-        'Не удалось сформировать предпросмотр справок.',
-      position: 'top'
-    })
-  } finally {
-    printPreviewLoading.value = false
-  }
-}
-
-async function downloadPrintCertificatesXls() {
-  if (!selectedRequests.value.length) return
-
-  try {
-    const requestIds = selectedRequests.value.map((request) => request.id)
-
-    const response = await generatePrintCertificates(requestIds)
-
-    const blob = new Blob([response.data], {
-      type: 'application/vnd.ms-excel'
-    })
-
-    const url = URL.createObjectURL(blob)
-
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'Справки_для_печати.xls'
-    link.click()
-
-    URL.revokeObjectURL(url)
-  } catch (err) {
-    console.error(err)
-
-    $q.notify({
-      type: 'negative',
-      message: 'Не удалось скачать XLS.',
+        'Не удалось сформировать редактор справок.',
       position: 'top'
     })
   }
-}
-
-function printCertificatesPreview() {
-  window.print()
 }
 
 function openCreateAccessDialog() {
@@ -1610,6 +1400,7 @@ function deleteAccess(row) {
     try {
       await deleteAccessAccount(row.id)
       await loadAccessRows()
+
 
       $q.notify({
         type: 'positive',
