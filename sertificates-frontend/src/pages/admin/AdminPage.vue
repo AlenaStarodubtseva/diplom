@@ -285,7 +285,7 @@
             </div>
 
             <q-banner rounded class="bg-blue-1 text-black q-mb-md">
-              Доступы загружаются из базы данных. Администратор может назначить секретарю один или несколько факультетов.
+              Администратор может назначить секретарю один или несколько факультетов.
             </q-banner>
 
             <div class="row q-col-gutter-sm q-mb-md">
@@ -649,6 +649,7 @@
     <CertificateSpreadsheetEditor
       v-model="printPreviewOpen"
       :certificates="printPreviewRows"
+      @download-xls="downloadPrintCertificatesXls"
     />
   </q-page>
 </template>
@@ -673,6 +674,7 @@ import {
 } from 'src/api/accessAccounts'
 import {
   generateCommonRequestDocument,
+  generatePrintCertificates,
   previewPrintCertificates
 } from 'src/api/requestDocuments'
 import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
@@ -1526,6 +1528,26 @@ async function toggleFacultyStatus(row) {
       position: 'top'
     })
   }
+}
+
+async function downloadPrintCertificatesXls() {
+  if (!selectedRequests.value.length) return
+
+  const requestIds = selectedRequests.value.map((request) => request.id)
+  const response = await generatePrintCertificates(requestIds)
+
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.ms-excel'
+  })
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = 'Справки_для_печати.xls'
+  link.click()
+
+  URL.revokeObjectURL(url)
 }
 
 onMounted(async () => {

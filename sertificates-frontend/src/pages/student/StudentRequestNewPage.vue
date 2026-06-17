@@ -17,6 +17,41 @@
       />
     </div>
 
+    <q-card flat bordered class="student-data-card q-mb-md">
+      <q-card-section>
+        <div class="text-subtitle1 text-weight-bold q-mb-md">
+          Данные обучающегося
+        </div>
+
+        <div class="student-data-grid">
+          <div>
+            <div class="student-field-label">ФИО</div>
+            <div class="student-field-value">
+              {{ studentMock.fullName }}
+            </div>
+          </div>
+
+          <div>
+            <div class="student-field-label">Курс / группа</div>
+            <div class="student-field-value">
+              {{ studentMock.course }} курс / {{ studentMock.groupName }}
+            </div>
+          </div>
+
+          <div>
+            <div class="student-field-label">Факультет</div>
+            <div class="student-field-value">
+              {{ studentMock.facultyShortName }}
+            </div>
+          </div>
+        </div>
+
+        <div class="text-caption text-grey-6 q-mt-md">
+          Данные автоматически получены из Кампус БГПУ
+        </div>
+      </q-card-section>
+    </q-card>
+
     <q-card class="main-card" flat>
       <q-card-section class="q-pa-lg">
         <q-form @submit="submitForm" class="form-grid">
@@ -32,13 +67,14 @@
             :rules="[val => !!val || 'Выберите тип справки']"
           />
 
-          <q-input
+          <q-select
             v-model="form.purpose"
+            :options="purposeOptions"
             label="Куда требуется справка"
             outlined
             color="dark"
             class="form-field"
-            :rules="[val => !!val || 'Укажите цель']"
+            :rules="[val => !!val || 'Выберите место предоставления']"
           />
 
           <q-input
@@ -62,52 +98,6 @@
             label="Нужен скан справки"
             color="primary"
             class="q-mb-sm"
-          />
-
-          <q-input
-            v-model="form.studentFullName"
-            label="ФИО"
-            outlined
-            color="dark"
-            class="form-field"
-            :rules="[
-              val => !!val || 'Укажите ФИО',
-              validateFullName
-            ]"
-          />
-
-          <q-input
-            v-model="form.groupName"
-            label="Группа"
-            outlined
-            color="dark"
-            class="form-field"
-            :rules="[val => !!val || 'Укажите группу']"
-          />
-
-          <q-select
-            v-model="form.course"
-            :options="courseOptions"
-            label="Курс"
-            outlined
-            emit-value
-            map-options
-            color="dark"
-            class="form-field"
-            :rules="[val => !!val || 'Выберите курс']"
-          />
-
-          <q-select
-            v-model="selectedFaculty"
-            :options="facultyOptions"
-            label="Факультет"
-            outlined
-            emit-value
-            map-options
-            color="dark"
-            class="form-field"
-            :loading="facultiesLoading"
-            :rules="[val => !!val || 'Выберите факультет']"
           />
 
           <template v-if="form.certificateType === 'WITH_STIPEND'">
@@ -167,6 +157,14 @@
                 ]"
               />
             </div>
+
+            <div
+              v-if="form.periodFrom && form.periodTo"
+              class="period-preview"
+            >
+              Период будет указан так:
+              <b>{{ formatDisplayDate(form.periodFrom) }} — {{ formatDisplayDate(form.periodTo) }}</b>
+            </div>
           </template>
 
           <q-input
@@ -224,19 +222,28 @@ const periodFromMonth = ref(null)
 const periodToYear = ref(null)
 const periodToMonth = ref(null)
 
+const studentMock = {
+  fullName: 'Стародубцева Алёна Константиновна',
+  course: 4,
+  groupName: '4ИС',
+  facultyShortName: 'ФФМОиТ'
+}
+
 const certificateTypeOptions = [
   { label: 'Справка без отметки о стипендии', value: 'NO_STIPEND' },
   { label: 'Справка с отметкой о стипендии', value: 'WITH_STIPEND' }
 ]
-
-const courseOptions = [
-  { label: '1 курс', value: 1 },
-  { label: '2 курс', value: 2 },
-  { label: '3 курс', value: 3 },
-  { label: '4 курс', value: 4 },
-  { label: '5 курс', value: 5 }
+const purposeOptions = [
+  'В отдел субсидий',
+  'В военный комиссариат',
+  'В отдел социальной защиты',
+  'В Фонд пенсионного и социального страхования Российской Федерации',
+  'По месту работы родителей',
+  'В налоговую инспекцию',
+  'По месту работы обучающегося',
+  'По месту требования',
+  'В суд'
 ]
-
 const monthNames = [
   { label: 'Январь', value: 1 },
   { label: 'Февраль', value: 2 },
@@ -263,10 +270,10 @@ const form = reactive({
   status: 'NEW',
   studentComment: '',
   secretaryComment: '',
-  studentFullName: '',
-  groupName: '',
-  course: null,
-  facultyName: '',
+  studentFullName: studentMock.fullName,
+  groupName: studentMock.groupName,
+  course: studentMock.course,
+  facultyName: studentMock.facultyShortName,
   registrationNumber: null,
   registrationYear: null,
   registeredAt: null,
@@ -277,22 +284,15 @@ const form = reactive({
   isDeleted: false
 })
 
-const facultyOptions = computed(() =>
-  faculties.value.map(item => ({
-    label: item.name,
-    value: item.id
-  }))
-)
-
 const closedMonthPairs = computed(() => {
   const result = []
   const now = new Date()
 
-  // последний завершённый месяц
   const lastClosed = new Date(now.getFullYear(), now.getMonth(), 0)
 
   for (let i = 0; i < 60; i++) {
     const d = new Date(lastClosed.getFullYear(), lastClosed.getMonth() - i, 1)
+
     result.push({
       year: d.getFullYear(),
       month: d.getMonth() + 1
@@ -304,6 +304,7 @@ const closedMonthPairs = computed(() => {
 
 const closedYearOptions = computed(() => {
   const years = [...new Set(closedMonthPairs.value.map(item => item.year))]
+
   return years
     .sort((a, b) => b - a)
     .map(year => ({
@@ -334,8 +335,9 @@ const availableToMonthOptions = computed(() => {
 
 watch(selectedFaculty, (facultyId) => {
   const found = faculties.value.find(f => f.id === facultyId)
+
   form.facultyId = facultyId || null
-  form.facultyName = found?.name || ''
+  form.facultyName = found?.name || studentMock.facultyShortName
 })
 
 watch(
@@ -380,21 +382,6 @@ watch(periodToYear, () => {
   periodToMonth.value = null
 })
 
-function validateFullName(val) {
-  if (!val) return 'Укажите ФИО'
-
-  const words = val
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-
-  if (words.length < 2 || words.length > 4) {
-    return 'ФИО должно содержать 2, 3 или 4 слова'
-  }
-
-  return true
-}
-
 function validatePeriodOrder() {
   if (form.certificateType !== 'WITH_STIPEND') return true
   if (!periodFromYear.value || !periodFromMonth.value || !periodToYear.value || !periodToMonth.value) return true
@@ -402,19 +389,33 @@ function validatePeriodOrder() {
   const from = new Date(periodFromYear.value, periodFromMonth.value - 1, 1)
   const to = new Date(periodToYear.value, periodToMonth.value - 1, 1)
 
-  if (from >= to) {
-    return 'Период "с" должен быть раньше периода "по"'
+  if (from > to) {
+    return 'Период "с" не может быть позже периода "по"'
   }
 
   return true
 }
 
 function getMonthStart(year, month) {
-  return new Date(year, month - 1, 1).toISOString().slice(0, 10)
+  return `${year}-${pad(month)}-01`
 }
 
 function getMonthEnd(year, month) {
-  return new Date(year, month, 0).toISOString().slice(0, 10)
+  const lastDay = new Date(year, month, 0).getDate()
+
+  return `${year}-${pad(month)}-${pad(lastDay)}`
+}
+
+function pad(value) {
+  return String(value).padStart(2, '0')
+}
+
+function formatDisplayDate(value) {
+  if (!value) return '—'
+
+  const [year, month, day] = value.split('-')
+
+  return `${day}.${month}.${year}`
 }
 
 async function loadFaculties() {
@@ -422,9 +423,29 @@ async function loadFaculties() {
 
   try {
     const { data } = await getFaculties()
+
     faculties.value = data.filter(item => item.isActive !== false)
+
+    const foundFaculty = faculties.value.find(item => {
+      const code = String(item.code || '').toLowerCase()
+      const name = String(item.name || '').toLowerCase()
+
+      return (
+        code === 'f01' ||
+        code === '01' ||
+        name.includes('ффмоит') ||
+        name.includes('физико-математ')
+      )
+    })
+
+    if (foundFaculty) {
+      selectedFaculty.value = foundFaculty.id
+      form.facultyId = foundFaculty.id
+      form.facultyName = foundFaculty.name
+    }
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось загрузить факультеты'
@@ -435,6 +456,18 @@ async function loadFaculties() {
 }
 
 async function submitForm() {
+  form.studentFullName = studentMock.fullName
+  form.groupName = studentMock.groupName
+  form.course = studentMock.course
+
+  if (!form.facultyId) {
+    $q.notify({
+      type: 'negative',
+      message: 'Не удалось определить факультет обучающегося'
+    })
+    return
+  }
+
   if (form.certificateType === 'WITH_STIPEND') {
     if (!periodFromYear.value || !periodFromMonth.value || !periodToYear.value || !periodToMonth.value) {
       $q.notify({
@@ -445,6 +478,7 @@ async function submitForm() {
     }
 
     const periodCheck = validatePeriodOrder()
+
     if (periodCheck !== true) {
       $q.notify({
         type: 'negative',
@@ -467,6 +501,7 @@ async function submitForm() {
     router.push('/student')
   } catch (err) {
     console.error(err)
+
     $q.notify({
       type: 'negative',
       message: 'Не удалось создать заявку'
@@ -491,6 +526,30 @@ onMounted(() => {
   padding: 4px 2px 0;
 }
 
+.student-data-card {
+  border-radius: 20px;
+  background: #f4f4f5;
+  border: 1px solid #dddddd;
+}
+
+.student-data-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 24px;
+}
+
+.student-field-label {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.student-field-value {
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+}
+
 .main-card {
   border-radius: 20px;
   box-shadow: 0 8px 24px rgba(24, 39, 75, 0.08);
@@ -507,6 +566,14 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+.period-preview {
+  background: #f4f4f5;
+  border: 1px solid #dddddd;
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: #374151;
 }
 
 .form-field :deep(.q-field__control) {
@@ -578,6 +645,12 @@ onMounted(() => {
 
 .submit-form-btn:hover {
   background: #a3001b !important;
+}
+
+@media (max-width: 900px) {
+  .student-data-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {

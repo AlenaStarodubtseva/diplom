@@ -22,10 +22,6 @@
 
     <q-card class="main-card" flat>
       <q-card-section class="q-pa-lg">
-        <q-banner rounded class="bg-blue-1 text-black q-mb-lg">
-          Выберите обучающегося из списка ранее обращавшихся студентов и заполните параметры справки.
-          Для секретаря список ограничивается доступными факультетами.
-        </q-banner>
 
         <div v-if="loading" class="q-pa-md text-grey-7">
           Загрузка данных...
@@ -91,7 +87,7 @@
             </div>
 
             <div class="text-caption text-grey-7 q-mt-xs">
-              Данные обучающегося взяты из ранее созданных заявок.
+              Данные обучающегося взяты из Кампус БГПУ
             </div>
           </div>
 
@@ -168,11 +164,16 @@
             </div>
           </template>
 
-          <q-input
+          <q-select
             v-model="form.purpose"
+            :options="purposeOptions"
             label="Куда требуется справка"
             outlined
-            :rules="[val => !!val || 'Укажите цель получения справки']"
+            use-input
+            fill-input
+            hide-selected
+            input-debounce="0"
+            :rules="[val => !!val || 'Выберите место предоставления справки']"
           />
 
           <q-input
@@ -273,7 +274,17 @@ const certificateTypeOptions = [
     value: 'WITH_STIPEND'
   }
 ]
-
+const purposeOptions = [
+  'В отдел субсидий',
+  'В военный комиссариат',
+  'В отдел социальной защиты',
+  'В фонд пенсионного и социального страхования Российской Федерации',
+  'По месту работы родителей',
+  'В налоговую инспекцию',
+  'По месту работы обучающегося',
+  'По месту требования',
+  'В суд'
+]
 const monthNames = [
   { label: 'Январь', value: 1 },
   { label: 'Февраль', value: 2 },
@@ -414,7 +425,7 @@ const students = computed(() => {
 
 const studentOptions = computed(() =>
   students.value.map(student => ({
-    label: `${student.fio} — ${student.groupName || 'без группы'} — ${facultyLabel(student.facultyId)}`,
+    label: `${student.fio} — ${student.groupName || 'без группы'}`,
     value: student.id
   }))
 )

@@ -243,6 +243,7 @@
     <CertificateSpreadsheetEditor
       v-model="printPreviewOpen"
       :certificates="printPreviewRows"
+      @download-xls="downloadPrintCertificatesXls"
     />
   </q-page>
 </template>
@@ -257,6 +258,7 @@ import { getFaculties } from 'src/api/faculties'
 import { getAccessAccounts } from 'src/api/accessAccounts'
 import {
   generateCommonRequestDocument,
+  generatePrintCertificates,
   previewPrintCertificates
 } from 'src/api/requestDocuments'
 import { getRegistrationNumbersByRequestIds } from 'src/api/requestRegistrationNumbers'
@@ -722,6 +724,26 @@ async function generateCertificatesForPrint() {
       position: 'top'
     })
   }
+}
+
+async function downloadPrintCertificatesXls() {
+  if (!selected.value.length) return
+
+  const requestIds = selected.value.map((request) => request.id)
+  const response = await generatePrintCertificates(requestIds)
+
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.ms-excel'
+  })
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = 'Справки_для_печати.xls'
+  link.click()
+
+  URL.revokeObjectURL(url)
 }
 
 onMounted(() => {
