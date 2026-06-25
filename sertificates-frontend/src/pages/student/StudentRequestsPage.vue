@@ -133,6 +133,14 @@ const faculties = ref([])
 const loading = ref(false)
 const error = ref('')
 
+
+const CURRENT_STUDENT_FULL_NAME = 'Стародубцева Алёна Константиновна'
+
+function normalizeFullName(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+
 async function loadRequests() {
   loading.value = true
   error.value = ''
@@ -153,10 +161,14 @@ async function loadRequests() {
       active: faculty.isActive !== false
     }))
 
-    const normalizedRequests = requestsResponse.data.map(request => ({
-      ...request,
-      registrationNumbers: []
-    }))
+    const normalizedRequests = requestsResponse.data
+      .filter(request =>
+        normalizeFullName(request.studentFullName) === normalizeFullName(CURRENT_STUDENT_FULL_NAME)
+      )
+      .map(request => ({
+        ...request,
+        registrationNumbers: []
+      }))
 
     const requestIds = normalizedRequests.map(request => request.id)
 
